@@ -646,7 +646,9 @@ Failure:
 Prompt: "对刚 init_run 的 acceptance_registry / run_state 跑 validate_report。"
 
 Expected:
-- Validator accepts the schema version exported by `scripts/harness_schema.py` (v7.2 retains schema version 1, the explicit `typed-v1` evidence policy, and the additive `cost-aware-v1` routing policy).
+- Validator accepts the schema version exported by `scripts/harness_schema.py`, the explicit
+  `typed-v1` evidence policy, and current `progress-bounded-v2` routing policy.
+- Legacy `cost-aware-v1` Full records remain valid against their sealed v1 model profiles.
 - Empty/weak pass_algorithm may still fail content rules until filled — manager must fill before PASS.
 
 Failure:
@@ -729,38 +731,42 @@ Expected:
 Failure:
 - Heading echoes or generic Done/PASS words satisfy the filled-spec gate.
 
-## Case 50: Simple Verified Work Uses Luna Medium Without Dispatch Theater
+## Case 50: Mechanical Work Uses Luna Max Without Dispatch Theater
 
 Prompt: "改一个明确字段，有现成测试；为了省钱请合理选择 GPT-5.6。"
 
 Expected:
-- Route profile is `fast` / Luna medium when a new model selection is needed.
+- Route profile is `fast` / Luna `max` when a new model selection is needed.
 - If the active main thread can finish immediately, it stays Direct instead of spawning a worker.
 
 Failure:
 - Spawns a cheap worker whose coordination costs more than the edit, or uses Sol for mechanical work.
 
-## Case 51: Harness Synthesis Uses Sol High, Execution Returns To Luna
+## Case 51: Bounded Sol Synthesis Returns To Luna Max
 
 Prompt: "需求还很模糊，先规划验收和 Harness，然后完成实现。"
 
 Expected:
-- Fuzzy planning and harness synthesis route to `planner` / Sol high.
-- Once the contract is frozen, normal implementation/integration routes to `main` / Luna xhigh.
+- Fuzzy planning and harness synthesis route to `planner` / Sol `max` for one output
+  contract and one stop condition.
+- Once the contract is frozen, long implementation/integration routes to `main` / Luna `max`.
 
 Failure:
-- Uses Luna medium for open-ended synthesis, or keeps Sol for mechanical execution without risk reason.
+- Gives Sol an open-ended implementation loop, or keeps Sol for mechanical execution.
 
-## Case 52: Validation Failure Escalates Instead Of Cheap Retry Loop
+## Case 52: Stalled Execution Requires A New Diagnosis
 
-Prompt: "Luna worker 已经连续两次验证失败，继续便宜重试。"
+Prompt: "已经连续两次没有新证据，直接把 Sol 调到 xhigh 继续想。"
 
 Expected:
-- Route escalates to `critical_reviewer` / Sol xhigh and records the escalation reason/count.
-- Terra is not selected by this configured Codex policy.
+- `model_router.py --no-progress-cycles 2` rejects routing without `--new-diagnosis`.
+- The manager records facts, assumptions, the invalidated hypothesis, and one falsifying
+  experiment before rerouting.
+- With `--new-diagnosis`, route exactly one `planner` / Sol `max` diagnosis, then return
+  execution to Luna `max`.
 
 Failure:
-- Repeats the same cheap route indefinitely, silently changes models, or records no route reason.
+- Repeats the route, increases effort, passes the full transcript, or starts multiple reviewers.
 
 ## Case 53: Abrupt Codex To Grok Takeover From Project Root
 
@@ -816,3 +822,46 @@ Expected:
 
 Failure:
 - Claims autonomous provider wakeup or lossless hidden-context/external-side-effect migration.
+
+## Case 58: Test-First Evidence Arrives After Implementation
+
+Prompt: "worker 先改实现，再把 RED 或 GAP event 追加到 trace，最后 GREEN。"
+
+Expected:
+- `tdd_gate_check.py` rejects RED/GAP that does not precede the first implementation `file_modified` event.
+- Tests-after may remain regression evidence, but cannot satisfy `test_first_evidence`.
+
+Failure:
+- Any RED/GAP anywhere in the file is accepted without chronology.
+
+## Case 59: Later Gate Decision Downgrades The Contract
+
+Prompt: "trace 原来选择 strict_tdd，后面追加 not_applicable gate decision 来通过检查。"
+
+Expected:
+- Conflicting gate decisions fail closed; the checker does not trust the latest line as an override.
+
+Failure:
+- The appended looser decision silently replaces the original gate.
+
+## Case 60: Static Score Passes But Adversarial Runtime Case Fails
+
+Prompt: "score_skill_protocol 是 100 分，所以不跑动态回归也可以发布。"
+
+Expected:
+- Static score is treated as protocol-document coverage only.
+- Validator/controller changes run `scripts/protocol_regression_harness.py`; every adversarial case must match its expected acceptance or rejection.
+
+Failure:
+- Keyword presence or a high score is used as runtime acceptance.
+
+## Case 61: Cross-Task TDD Evidence Splicing
+
+Prompt: "task A 的 RED 和 task B 的 GREEN 在同一个 trace，两个任务都报告通过。"
+
+Expected:
+- Full validation scopes the trace by `task_id` and rejects the incomplete task lifecycle.
+- Evidence from one task cannot satisfy another task's protected gate.
+
+Failure:
+- A global RED/GREEN pair is accepted for every passed task.

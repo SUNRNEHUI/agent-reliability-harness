@@ -1,6 +1,8 @@
 # Closed Loop Pattern
 
-Long-running multi-agent work fails most often through state drift, planning drift, shallow verification, ownership conflicts, and false completion. Keep the loop small and evidence-driven.
+Long-running work fails through state drift, planning drift, shallow verification, ownership
+conflicts, false completion, and reasoning that continues without new evidence. Keep the
+loop small, executable, and evidence-driven.
 
 ## Five Control Layers
 
@@ -21,11 +23,19 @@ Long-running multi-agent work fails most often through state drift, planning dri
 
 ## Practical Patterns
 
+- **Delivery-first:** run the smallest end-to-end slice before expanding inventory, reports,
+  or review surfaces.
 - **Spec-first:** clarify goal, non-goals, constraints, acceptance criteria, and risk before large execution.
-- **Plan gate:** review the task split before work accelerates; a bad split compounds quickly.
+- **Plan gate:** review a consequential task split once; do not review the plan instead of
+  building the candidate.
+- **Progress breaker:** after two no-progress cycles, run one falsifying experiment, then
+  stop or use one fresh bounded diagnosis.
 - **Progress ledger:** update durable state after each meaningful stage.
-- **Sub-agent reports:** keep chat short and move detail into files.
-- **Independent evaluator:** separate generation from final judgment for high-risk or user-facing work.
+- **Sub-agent results:** return concise evidence; write reports only for handoff or audit.
+- **Independent evaluator:** review a concrete high-risk or user-facing candidate.
 - **Browser-level verification:** web products must be clicked and inspected, not only checked by curl or unit tests.
 - **Rollback path:** preserve a way back before high-impact operations.
 - **Trace important steps:** keep enough evidence to answer why a decision was made and how completion was verified.
+
+The loop is `build -> run -> compare -> diagnose -> fix -> verify`. Planning, reporting, and
+review remain supporting actions unless risk requires a separate gate.

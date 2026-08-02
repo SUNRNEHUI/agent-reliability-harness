@@ -77,11 +77,43 @@ def update_run_state(
     trace_path: Path,
     stdout_tail: str,
     stderr_tail: str,
+    summary: str = "",
     timeout_seconds: float | None = None,
     actor_id: str = "",
     owner_epoch: int | None = None,
 ) -> None:
     now = utc_now()
+
+    def apply_gate_event(data: dict[str, Any]) -> None:
+        tasks = data.get("tasks")
+        if not isinstance(tasks, list):
+            return
+        task = next(
+            (item for item in tasks if isinstance(item, dict) and item.get("id") == task_id),
+            None,
+        )
+        if not isinstance(task, dict) or not isinstance(task.get("verification_gate"), dict):
+            return
+        gate = task["verification_gate"]
+        mode = gate_mode or str(gate.get("mode") or "")
+        if mode:
+            gate["mode"] = mode
+        gate["tdd_trace_path"] = (
+            "tdd_trace.jsonl" if trace_path.name == "tdd_trace.jsonl" else str(trace_path)
+        )
+        phase_key = phase.strip().upper()
+        if phase_key == "RED":
+            gate["red_command"] = command
+            gate["red_result"] = result
+            gate["red_failure_reason"] = (
+                summary.strip() or stderr_tail.strip() or stdout_tail.strip() or f"exit code {exit_code}"
+            )
+        elif phase_key == "GREEN":
+            gate["green_command"] = command
+            gate["green_result"] = result
+        elif phase_key == "REFACTOR":
+            gate["refactor_check"] = f"{command} -> {result}"
+
     def mutate(data: dict[str, Any]) -> dict[str, Any]:
         prior_context = data.get("tdd_current_cycle_context")
         retry_count = prior_context.get("retry_count", 0) if isinstance(prior_context, dict) and prior_context.get("task_id") == task_id else 0
@@ -94,6 +126,7 @@ def update_run_state(
                    "stderr_tail": stderr_tail, "retry_count": retry_count,
                    "max_retries": prior_context.get("max_retries", 3) if isinstance(prior_context, dict) else 3, "updated_at": now}
         if timeout_seconds is not None: context["timeout_seconds"] = timeout_seconds
+        apply_gate_event(data)
         data["updated_at"] = now
         data["tdd_current_cycle_context"] = context
         return data
@@ -253,6 +286,7 @@ def main() -> int:
             update_run_state(args.run_state.expanduser(), task_id=args.task_id, gate_mode=args.gate_mode, phase=args.phase,
                              command=command_text, result=result, exit_code=return_code, trace_path=trace_path,
                              stdout_tail=stdout_tail, stderr_tail=stderr_tail,
+                             summary=args.summary,
                              timeout_seconds=args.timeout_seconds if timed_out else None,
                              actor_id=args.actor_id, owner_epoch=args.owner_epoch)
         except Exception as exc:

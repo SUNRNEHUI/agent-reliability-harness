@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INSTALL = Path("/Users/sunrenhui/.codex/skills/agent-reliability-harness")
+INSTALL = Path.home() / ".codex" / "skills" / "agent-reliability-harness"
 
 
 def run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
@@ -344,6 +344,8 @@ none
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_runtime_package_matches_install(self) -> None:
+        if not INSTALL.is_dir():
+            self.skipTest(f"runtime skill is not installed at {INSTALL}")
         result = run("python3", "scripts/package_skill.py", "--check", str(INSTALL))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,8 +32,8 @@ from harness_schema import (
     TASK_TRANSITIONS,
     TERMINAL_RUN_STATUSES,
     VERIFICATION_TIERS,
-    model_profiles_for,
 )
+from runtime_profiles import model_profiles_for
 from runtime_state import append_jsonl, locked, mutate_json
 from state_witness_check import validate as validate_state_witness
 from validate_report import validate_acceptance_registry, validate_run_state
@@ -40,6 +41,10 @@ from tdd_gate_check import gate_mode_of, latest_gate_decision, load_events, vali
 
 
 DIGEST_ANCHOR_EVENTS = {"run_initialized", "state_sealed", "state_reseal_baseline"}
+PORTABLE_PROTOCOL = "arh-portable-v2"
+PORTABLE_SCHEMA_VERSION = 2
+PORTABLE_TERMINAL_STATUSES = {"accepted", "failed", "cancelled"}
+DEFAULT_CAPSULE_MAX_CHARS = 6000
 
 
 def utc_now() -> str:
@@ -64,6 +69,257 @@ def load_object(path: Path) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError(f"JSON root must be an object: {path}")
     return value
+
+
+def portable_contract_errors(contract: dict[str, object], artifact_dir: Path) -> list[str]:
+    errors: list[str] = []
+    if contract.get("schema_version") != PORTABLE_SCHEMA_VERSION:
+        errors.append(f"schema_version must be {PORTABLE_SCHEMA_VERSION}")
+    if contract.get("protocol") != PORTABLE_PROTOCOL:
+        errors.append(f"protocol must be {PORTABLE_PROTOCOL}")
+    if contract.get("mode") != "portable":
+        errors.append("mode must be portable")
+    status = str(contract.get("status") or "")
+    if status not in {"active", *PORTABLE_TERMINAL_STATUSES}:
+        errors.append("status must be active, accepted, failed, or cancelled")
+
+    recorded_dir = str(contract.get("artifact_dir") or "").strip()
+    if not recorded_dir:
+        errors.append("artifact_dir must be non-empty")
+    elif Path(recorded_dir).expanduser().resolve() != artifact_dir.resolve():
+        errors.append("artifact_dir does not match the opened contract directory")
+
+    project_root = str(contract.get("project_root") or "").strip()
+    if not project_root:
+        errors.append("project_root must be non-empty")
+    elif artifact_dir.parent.name != ".harness":
+        errors.append("Portable Contract directory must be under <project>/.harness/<slug>")
+    elif Path(project_root).expanduser().resolve() != artifact_dir.parent.parent.resolve():
+        errors.append("project_root does not match the opened contract directory")
+
+    objective = contract.get("objective")
+    if not isinstance(objective, dict):
+        errors.append("objective must be an object")
+    else:
+        if not str(objective.get("goal") or "").strip():
+            errors.append("objective.goal must be non-empty")
+        done_when = objective.get("done_when")
+        if not isinstance(done_when, list) or not any(str(item).strip() for item in done_when):
+            errors.append("objective.done_when must contain at least one criterion")
+
+    execution = contract.get("execution")
+    if not isinstance(execution, dict):
+        errors.append("execution must be an object")
+    elif status not in PORTABLE_TERMINAL_STATUSES and not str(execution.get("next_action") or "").strip():
+        errors.append("execution.next_action must be non-empty")
+
+    ownership = contract.get("ownership")
+    if not isinstance(ownership, dict) or not isinstance(ownership.get("owner"), dict):
+        errors.append("ownership.owner must be an object")
+
+    for key in ("decisions", "evidence"):
+        if not isinstance(contract.get(key), list):
+            errors.append(f"{key} must be a list")
+    if not isinstance(contract.get("workspace"), dict):
+        errors.append("workspace must be an object")
+    if not isinstance(contract.get("capabilities"), dict):
+        errors.append("capabilities must be an object")
+    if not isinstance(contract.get("context"), dict):
+        errors.append("context must be an object")
+    if not isinstance(contract.get("extensions"), dict):
+        errors.append("extensions must be an object")
+    return errors
+
+
+def validate_portable_contract_path(path: Path) -> list[str]:
+    try:
+        contract = load_object(path)
+    except ValueError as exc:
+        return [str(exc)]
+    return portable_contract_errors(contract, path.parent)
+
+
+def validate_portable_artifact_path(path: Path) -> list[str]:
+    errors = validate_portable_contract_path(path)
+    errors.extend(validate_jsonl(path.parent / "events.jsonl"))
+    return errors
+
+
+def portable_candidates(path: Path, selector: str = "") -> tuple[list[Path], list[str]]:
+    target = path.expanduser().resolve()
+    if target.is_file() and target.name == "contract.json":
+        paths = [target]
+    elif (target / "contract.json").is_file():
+        paths = [target / "contract.json"]
+    else:
+        root = target / ".harness"
+        paths = sorted(root.glob("*/contract.json")) if root.is_dir() else []
+
+    active: list[Path] = []
+    corrupt: list[str] = []
+    for contract_path in paths:
+        if selector and contract_path.parent.name != selector:
+            continue
+        errors = validate_portable_artifact_path(contract_path)
+        if errors:
+            corrupt.append(f"{contract_path.parent}: {'; '.join(errors)}")
+            continue
+        contract = load_object(contract_path)
+        if str(contract.get("status") or "active") not in PORTABLE_TERMINAL_STATUSES:
+            active.append(contract_path.parent.resolve())
+    return active, corrupt
+
+
+def select_portable_artifact(path: Path, selector: str = "", *, required: bool = True) -> Path | None:
+    active, corrupt = portable_candidates(path, selector)
+    if corrupt:
+        raise ValueError("corrupt Portable Contract found: " + " | ".join(corrupt))
+    if not active:
+        if required:
+            raise ValueError("no active Portable Contract found")
+        return None
+    if len(active) != 1:
+        raise ValueError("multiple active Portable Contracts found: " + ", ".join(path.name for path in active))
+    return active[0]
+
+
+def portable_project_root(contract: dict[str, object]) -> Path:
+    root = str(contract.get("project_root") or "").strip()
+    if not root:
+        raise ValueError("Portable Contract project_root is empty")
+    return Path(root).expanduser().resolve()
+
+
+def portable_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def portable_capsule(
+    contract: dict[str, object],
+    *,
+    workspace_drift: bool = False,
+    changed_paths: list[str] | None = None,
+    max_chars: int = DEFAULT_CAPSULE_MAX_CHARS,
+) -> str:
+    objective = contract.get("objective")
+    execution = contract.get("execution")
+    context = contract.get("context")
+    capabilities = contract.get("capabilities")
+    objective = objective if isinstance(objective, dict) else {}
+    execution = execution if isinstance(execution, dict) else {}
+    context = context if isinstance(context, dict) else {}
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+
+    def section(title: str, values: list[str]) -> list[str]:
+        if not values:
+            return []
+        return [f"## {title}", "", *(f"- {value}" for value in values), ""]
+
+    decisions = []
+    for item in contract.get("decisions") or []:
+        if not isinstance(item, dict):
+            continue
+        decision = str(item.get("decision") or "").strip()
+        reason = str(item.get("reason") or "").strip()
+        if decision:
+            decisions.append(f"{decision} ({reason})" if reason else decision)
+
+    evidence = []
+    for item in contract.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path") or "").strip()
+        digest = str(item.get("sha256") or "").strip()
+        if path:
+            evidence.append(f"{path} sha256:{digest[:12]}" if digest else path)
+
+    must_read = portable_list(context.get("must_read"))
+    read_if_needed = portable_list(context.get("read_if_needed"))
+    if "events.jsonl" not in read_if_needed:
+        read_if_needed.append("events.jsonl")
+
+    lines = [
+        "# Resume Capsule",
+        "",
+        f"Protocol: {PORTABLE_PROTOCOL}",
+        f"Title: {str(contract.get('title') or '').strip()}",
+        f"Status: {str(contract.get('status') or '').strip()}",
+        f"Goal: {str(objective.get('goal') or '').strip()}",
+        f"Current milestone: {str(execution.get('current_milestone') or '').strip() or 'not set'}",
+        f"Next action: {str(execution.get('next_action') or '').strip() or 'none (terminal)'}",
+        f"Workspace drift: {'yes' if workspace_drift else 'no'}",
+        "",
+    ]
+    lines.extend(section("Done When", portable_list(objective.get("done_when"))))
+    lines.extend(section("Non-Goals", portable_list(objective.get("non_goals"))))
+    lines.extend(section("Constraints", portable_list(objective.get("constraints"))))
+    lines.extend(section("Completed", portable_list(execution.get("completed"))))
+    lines.extend(section("Pending Verification", portable_list(execution.get("pending_verification"))))
+    lines.extend(section("Blockers", portable_list(execution.get("blockers"))))
+    terminal_reason = str(execution.get("terminal_reason") or "").strip()
+    lines.extend(section("Terminal Reason", [terminal_reason] if terminal_reason else []))
+    lines.extend(section("Decisions", decisions))
+    lines.extend(section("Changed Paths", changed_paths or []))
+    lines.extend(section("Evidence", evidence))
+    lines.extend(section("Required Capabilities", portable_list(capabilities.get("required"))))
+    lines.extend(section("Optional Capabilities", portable_list(capabilities.get("optional"))))
+    lines.extend(section("Must Read", must_read))
+    lines.extend(section("Read If Needed", read_if_needed))
+    capsule = "\n".join(lines).rstrip() + "\n"
+    if len(capsule) > max_chars:
+        raise ValueError(
+            f"resume capsule is {len(capsule)} characters; reduce contract state below {max_chars} characters"
+        )
+    return capsule
+
+
+def write_portable_capsule(
+    artifact_dir: Path,
+    contract: dict[str, object],
+    *,
+    workspace_drift: bool = False,
+    changed_paths: list[str] | None = None,
+    max_chars: int = DEFAULT_CAPSULE_MAX_CHARS,
+) -> str:
+    capsule = portable_capsule(
+        contract,
+        workspace_drift=workspace_drift,
+        changed_paths=changed_paths,
+        max_chars=max_chars,
+    )
+    (artifact_dir / "capsule.md").write_text(capsule, encoding="utf-8")
+    return capsule
+
+
+def write_portable_contract(artifact_dir: Path, expected: dict[str, object], value: dict[str, object]) -> None:
+    errors = portable_contract_errors(value, artifact_dir)
+    if errors:
+        raise ValueError("invalid Portable Contract: " + "; ".join(errors))
+
+    def update(current: dict[str, object]) -> dict[str, object]:
+        if current != expected:
+            raise ValueError("concurrent update detected: contract.json")
+        return value
+
+    mutate_json(artifact_dir / "contract.json", update, writer_role="manager", scope="global")
+
+
+def portable_evidence(project_root: Path, value: str) -> dict[str, object]:
+    candidate = Path(value).expanduser()
+    resolved = candidate.resolve() if candidate.is_absolute() else (project_root / candidate).resolve()
+    try:
+        relative = resolved.relative_to(project_root).as_posix()
+    except ValueError as exc:
+        raise ValueError("portable evidence must remain inside the project root") from exc
+    if not resolved.is_file() or resolved.stat().st_size <= 0:
+        raise ValueError(f"portable evidence must be a non-empty regular file: {relative}")
+    return {
+        "path": relative,
+        "sha256": sha256(resolved.read_bytes()),
+        "size_bytes": resolved.stat().st_size,
+    }
 
 
 def validate_candidate(
@@ -115,6 +371,106 @@ def artifact_evidence_path(artifact_dir: Path, value: str) -> tuple[Path, str]:
     if not resolved.exists() or not resolved.is_file() or resolved.stat().st_size <= 0:
         raise ValueError(f"evidence file must be a non-empty regular file: {normalized}")
     return resolved, normalized
+
+
+def lesson_ledger_path(artifact_dir: Path) -> Path:
+    return artifact_dir / "lessons.jsonl"
+
+
+def validate_lesson_ledger(artifact_dir: Path) -> tuple[list[dict[str, object]], list[str]]:
+    """Validate evidence-backed, append-only lesson records for a Full run."""
+    path = lesson_ledger_path(artifact_dir)
+    if not path.exists():
+        state_path = artifact_dir / "run_state.json"
+        if state_path.is_file():
+            try:
+                state = load_object(state_path)
+            except ValueError:
+                return [], []
+            layers = state.get("state_layers")
+            session = layers.get("session_state") if isinstance(layers, dict) else None
+            paths = session.get("artifact_paths") if isinstance(session, dict) else None
+            if isinstance(paths, dict) and paths.get("lessons") == "lessons.jsonl":
+                return [], ["missing lessons.jsonl declared by run_state.json"]
+        return [], []
+
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+    if content and not content.endswith("\n"):
+        errors.append("lessons.jsonl: missing final newline")
+    records: list[dict[str, object]] = []
+    ids: set[str] = set()
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            errors.append(f"lessons.jsonl:{line_number}: invalid JSON: {exc}")
+            continue
+        if not isinstance(record, dict):
+            errors.append(f"lessons.jsonl:{line_number}: record must be an object")
+            continue
+        prefix = f"lessons.jsonl:{line_number}"
+        if record.get("schema_version") != 1:
+            errors.append(f"{prefix}: schema_version must be 1")
+        for key in ("id", "recorded_at", "source_case", "category", "symptom", "root_cause", "fix", "verification", "reusable_rule", "verified_by"):
+            if not isinstance(record.get(key), str) or not str(record.get(key)).strip():
+                errors.append(f"{prefix}: {key} must be a non-empty string")
+        record_id = str(record.get("id") or "")
+        if record_id in ids:
+            errors.append(f"{prefix}: duplicate lesson id {record_id}")
+        ids.add(record_id)
+        if record.get("status") != "verified":
+            errors.append(f"{prefix}: status must be verified")
+        if record.get("verification_tier") not in VERIFICATION_TIERS:
+            errors.append(f"{prefix}: verification_tier must be one of {', '.join(VERIFICATION_TIERS)}")
+        evidence = record.get("evidence")
+        if not isinstance(evidence, list) or not evidence:
+            errors.append(f"{prefix}: evidence must be a non-empty array")
+        else:
+            for evidence_index, item in enumerate(evidence):
+                if not isinstance(item, dict):
+                    errors.append(f"{prefix}.evidence[{evidence_index}] must be an object")
+                    continue
+                try:
+                    evidence_path, _ = artifact_evidence_path(artifact_dir, str(item.get("path") or ""))
+                except ValueError as exc:
+                    errors.append(f"{prefix}.evidence[{evidence_index}]: {exc}")
+                    continue
+                if item.get("sha256") != sha256(evidence_path.read_bytes()):
+                    errors.append(f"{prefix}.evidence[{evidence_index}]: sha256 does not match evidence bytes")
+        records.append(record)
+    return records, errors
+
+
+def validate_lesson_trace(artifact_dir: Path, records: list[dict[str, object]]) -> list[str]:
+    trace_path = artifact_dir / "trace.jsonl"
+    if not trace_path.exists() or not records:
+        return []
+    by_id = {str(record.get("id")): record for record in records}
+    seen: set[str] = set()
+    errors: list[str] = []
+    for line_number, line in enumerate(trace_path.read_text(encoding="utf-8").splitlines(), start=1):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("event") != "lesson_recorded":
+            continue
+        lesson_id = str(event.get("lesson_id") or "")
+        record = by_id.get(lesson_id)
+        if record is None:
+            errors.append(f"trace.jsonl:{line_number}: lesson_recorded references unknown lesson {lesson_id}")
+            continue
+        seen.add(lesson_id)
+        line_bytes = (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        if event.get("lesson_sha256") != sha256(line_bytes):
+            errors.append(f"trace.jsonl:{line_number}: lesson digest does not match lessons.jsonl")
+    missing_events = sorted(set(by_id) - seen)
+    if missing_events:
+        errors.append("lessons.jsonl records missing lesson_recorded trace events: " + ", ".join(missing_events))
+    return errors
 
 
 def build_evidence_additions(
@@ -332,6 +688,34 @@ def project_root_for_artifact(artifact_dir: Path) -> Path:
     raise ValueError("artifact directory must be under <project>/workspace/<run>")
 
 
+def validate_artifact_dir_binding(artifact_dir: Path) -> list[str]:
+    """Ensure run_state points at the artifact directory the controller opened."""
+    state_path = artifact_dir / "run_state.json"
+    if not state_path.is_file():
+        return ["missing canonical state file: run_state.json"]
+    try:
+        state = load_object(state_path)
+    except ValueError as exc:
+        return [str(exc)]
+    recorded = state.get("artifact_dir")
+    if not isinstance(recorded, str) or not recorded.strip():
+        return ["run_state.json: artifact_dir must be a non-empty path"]
+    recorded_path = Path(recorded).expanduser()
+    if not recorded_path.is_absolute():
+        try:
+            recorded_path = project_root_for_artifact(artifact_dir) / recorded_path
+        except ValueError as exc:
+            return [f"run_state.json: cannot resolve relative artifact_dir: {exc}"]
+    expected = artifact_dir.expanduser().resolve()
+    observed = recorded_path.resolve()
+    if observed != expected:
+        return [
+            "run_state.json: artifact_dir does not match opened artifact directory "
+            f"(recorded {observed}; opened {expected})"
+        ]
+    return []
+
+
 def repository_snapshot(project_root: Path) -> dict[str, object]:
     root = project_root.expanduser().resolve()
 
@@ -364,6 +748,7 @@ def repository_snapshot(project_root: Path) -> dict[str, object]:
         "--",
         ".",
         ":(exclude)workspace/**",
+        ":(exclude).harness/**",
     )
     tracked = git(
         "diff",
@@ -374,6 +759,7 @@ def repository_snapshot(project_root: Path) -> dict[str, object]:
         "--",
         ".",
         ":(exclude)workspace/**",
+        ":(exclude).harness/**",
     )
     diff = git(
         "diff",
@@ -383,6 +769,7 @@ def repository_snapshot(project_root: Path) -> dict[str, object]:
         "--",
         ".",
         ":(exclude)workspace/**",
+        ":(exclude).harness/**",
     )
     fingerprint = hashlib.sha256()
     fingerprint.update(status.stdout.encode("utf-8", errors="surrogateescape"))
@@ -395,6 +782,7 @@ def repository_snapshot(project_root: Path) -> dict[str, object]:
         "--",
         ".",
         ":(exclude)workspace/**",
+        ":(exclude).harness/**",
     )
     tracked_paths = {
         value for value in tracked.stdout.split("\0") if value
@@ -602,6 +990,42 @@ def select_unique_active_run(path: Path, selector: str = "") -> Path:
     return Path(str(runs[0]["artifact_dir"])).resolve()
 
 
+def select_active_protocol_artifact(path: Path, selector: str = "") -> tuple[str, Path]:
+    portable, portable_corrupt = portable_candidates(path, selector)
+    discovered = discover_active_runs(path, selector)
+    full_corrupt = discovered["corrupt"]
+    if portable_corrupt or full_corrupt:
+        details = list(portable_corrupt)
+        details.extend(
+            f"{item['artifact_dir']}: {item['error']}"
+            for item in full_corrupt
+            if isinstance(item, dict)
+        )
+        raise ValueError("corrupt harness state found: " + " | ".join(details))
+
+    full = discovered["runs"]
+    full = full if isinstance(full, list) else []
+    if len(portable) > 1:
+        names = ", ".join(item.name for item in portable)
+        raise ValueError(f"multiple active Portable Contracts found: {names}")
+    if len(full) > 1:
+        names = ", ".join(
+            str(item.get("slug")) for item in full if isinstance(item, dict)
+        )
+        raise ValueError(f"multiple active Full Harness runs found: {names}")
+    if portable and full:
+        full_path = str(full[0].get("artifact_dir")) if isinstance(full[0], dict) else "unknown"
+        raise ValueError(
+            "ambiguous active harness protocols: Portable "
+            f"{portable[0]} and Audited/legacy Full {full_path}; pass an explicit artifact path"
+        )
+    if portable:
+        return "portable", portable[0]
+    if full and isinstance(full[0], dict):
+        return "full", Path(str(full[0]["artifact_dir"])).resolve()
+    raise ValueError("no active Portable or Audited Harness run found")
+
+
 def changed_repository_paths(
     before: dict[str, object], after: dict[str, object]
 ) -> tuple[bool, list[str]]:
@@ -627,6 +1051,476 @@ def changed_repository_paths(
     metadata_drift = any(before.get(key) != after.get(key) for key in ("root", "branch", "head"))
     drift = worktree_drift or metadata_drift
     return drift, changed
+
+
+def portable_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "-", value.strip().casefold()).strip("-")
+    return slug or "portable-task"
+
+
+def materialize_portable(args: argparse.Namespace) -> int:
+    project_root = args.project_root.expanduser().resolve()
+    if not project_root.is_dir():
+        raise ValueError(f"project root is not a directory: {project_root}")
+    slug = portable_slug(args.slug or args.title)
+    artifact_dir = project_root / ".harness" / slug
+    if artifact_dir.exists():
+        raise ValueError(f"portable artifact already exists: {artifact_dir}")
+
+    now = utc_now()
+    artifact_dir.mkdir(parents=True)
+    contract: dict[str, object] = {
+        "schema_version": PORTABLE_SCHEMA_VERSION,
+        "protocol": PORTABLE_PROTOCOL,
+        "mode": "portable",
+        "id": str(uuid.uuid4()),
+        "title": args.title.strip(),
+        "artifact_dir": str(artifact_dir),
+        "project_root": str(project_root),
+        "created_at": now,
+        "updated_at": now,
+        "status": "active",
+        "objective": {
+            "goal": args.goal.strip(),
+            "done_when": list(dict.fromkeys(item.strip() for item in args.done_when if item.strip())),
+            "non_goals": list(dict.fromkeys(item.strip() for item in args.non_goal if item.strip())),
+            "constraints": list(dict.fromkeys(item.strip() for item in args.constraint if item.strip())),
+        },
+        "execution": {
+            "current_milestone": args.current_milestone.strip(),
+            "completed": [],
+            "next_action": args.next_action.strip(),
+            "pending_verification": [],
+            "blockers": [],
+        },
+        "decisions": [],
+        "workspace": {
+            "checkpoint": repository_snapshot(project_root),
+        },
+        "ownership": {
+            "status": "unclaimed",
+            "owner": {"actor_id": "", "runtime": "", "epoch": 0, "claimed_at": ""},
+            "previous_owner": {},
+            "takeover_count": 0,
+        },
+        "evidence": [],
+        "capabilities": {
+            "required": list(dict.fromkeys(args.required_capability or ["filesystem"])),
+            "optional": list(dict.fromkeys(args.optional_capability)),
+        },
+        "context": {
+            "must_read": list(dict.fromkeys(args.must_read)),
+            "read_if_needed": list(dict.fromkeys(args.read_if_needed or ["events.jsonl"])),
+        },
+        "extensions": {},
+    }
+    errors = portable_contract_errors(contract, artifact_dir)
+    if errors:
+        shutil.rmtree(artifact_dir)
+        raise ValueError("invalid Portable Contract: " + "; ".join(errors))
+    (artifact_dir / "contract.json").write_text(
+        json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    append_jsonl(
+        artifact_dir / "events.jsonl",
+        {
+            "event": "portable_materialized",
+            "protocol": PORTABLE_PROTOCOL,
+            "ts": now,
+            "contract_sha256": sha256(serialized_json(contract)),
+        },
+        writer_role="manager",
+        scope="global",
+    )
+    write_portable_capsule(artifact_dir, contract, max_chars=args.max_chars)
+    print(
+        json.dumps(
+            {
+                "artifact_dir": str(artifact_dir),
+                "capsule_path": str(artifact_dir / "capsule.md"),
+                "contract_path": str(artifact_dir / "contract.json"),
+                "mode": "portable",
+                "protocol": PORTABLE_PROTOCOL,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def portable_owner(contract: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    ownership = contract.get("ownership")
+    if not isinstance(ownership, dict):
+        raise ValueError("Portable Contract ownership is invalid")
+    owner = ownership.get("owner")
+    if not isinstance(owner, dict):
+        raise ValueError("Portable Contract owner is invalid")
+    return ownership, owner
+
+
+def require_portable_owner(owner: dict[str, object], actor_id: str, owner_epoch: int | None) -> None:
+    if str(owner.get("actor_id") or "") != actor_id:
+        raise ValueError("current Portable Contract owner does not match --actor-id")
+    epoch = int(owner.get("epoch") or 0)
+    if owner_epoch is None or owner_epoch != epoch:
+        raise ValueError(f"stale Portable Contract owner epoch; expected {epoch}")
+
+
+def portable_checkpoint(args: argparse.Namespace, artifact_dir: Path) -> int:
+    with locked(artifact_dir / ".portable"):
+        contract = load_object(artifact_dir / "contract.json")
+        errors = portable_contract_errors(contract, artifact_dir)
+        if errors:
+            raise ValueError("invalid Portable Contract: " + "; ".join(errors))
+        original = deepcopy(contract)
+        project_root = portable_project_root(contract)
+        actor_id = validate_actor(args.actor_id, "actor id")
+        runtime = validate_actor(args.runtime.casefold(), "runtime")
+        ownership, owner = portable_owner(contract)
+        if str(owner.get("actor_id") or ""):
+            require_portable_owner(owner, actor_id, args.owner_epoch)
+            if str(owner.get("runtime") or "") != runtime:
+                raise ValueError("checkpoint runtime must match the current Portable Contract owner runtime")
+        else:
+            owner.update(
+                {
+                    "actor_id": actor_id,
+                    "runtime": runtime,
+                    "epoch": 1,
+                    "claimed_at": utc_now(),
+                }
+            )
+
+        execution = contract.get("execution")
+        if not isinstance(execution, dict):
+            raise ValueError("Portable Contract execution is invalid")
+        next_action = args.next_action.strip()
+        reason = args.reason.strip()
+        if not next_action or not reason:
+            raise ValueError("checkpoint requires non-empty --next-action and --reason")
+        execution["next_action"] = next_action
+        if args.current_task.strip():
+            execution["current_milestone"] = args.current_task.strip()
+        execution["completed"] = append_unique(execution.get("completed"), args.completed)
+        blockers = portable_list(execution.get("blockers"))
+        for resolved in args.resolve_blocker:
+            normalized = resolved.strip()
+            if normalized not in blockers:
+                raise ValueError(f"cannot resolve unknown blocker: {normalized}")
+            blockers.remove(normalized)
+        execution["blockers"] = append_unique(blockers, args.blocker)
+        if args.clear_pending_verification and args.pending_verification:
+            raise ValueError("cannot combine --clear-pending-verification with --pending-verification")
+        if args.clear_pending_verification:
+            execution["pending_verification"] = []
+        elif args.pending_verification:
+            execution["pending_verification"] = list(dict.fromkeys(args.pending_verification))
+
+        if args.decision or args.decision_reason:
+            if not args.decision.strip() or not args.decision_reason.strip():
+                raise ValueError("--decision and --decision-reason must be provided together")
+            contract["decisions"] = append_unique_values(
+                contract.get("decisions"),
+                [
+                    {
+                        "decision": args.decision.strip(),
+                        "reason": args.decision_reason.strip(),
+                        "recorded_at": utc_now(),
+                    }
+                ],
+            )
+
+        additions = [portable_evidence(project_root, value) for value in args.evidence_file]
+        contract["evidence"] = append_unique_values(contract.get("evidence"), additions)
+        contract["workspace"] = {"checkpoint": repository_snapshot(project_root)}
+        ownership["status"] = "active"
+        contract["status"] = "active"
+        contract["updated_at"] = utc_now()
+        write_portable_contract(artifact_dir, original, contract)
+        append_jsonl(
+            artifact_dir / "events.jsonl",
+            {
+                "event": "portable_checkpoint",
+                "ts": contract["updated_at"],
+                "actor_id": actor_id,
+                "runtime": runtime,
+                "next_action": next_action,
+                "reason": reason,
+                "evidence_paths": [item["path"] for item in additions],
+            },
+            writer_role="manager",
+            scope="global",
+        )
+        write_portable_capsule(artifact_dir, contract)
+        print(
+            json.dumps(
+                {
+                    "artifact_dir": str(artifact_dir),
+                    "mode": "portable",
+                    "owner": owner,
+                    "next_action": next_action,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    return 0
+
+
+def portable_handoff(args: argparse.Namespace, artifact_dir: Path) -> int:
+    with locked(artifact_dir / ".portable"):
+        contract = load_object(artifact_dir / "contract.json")
+        errors = portable_contract_errors(contract, artifact_dir)
+        if errors:
+            raise ValueError("invalid Portable Contract: " + "; ".join(errors))
+        original = deepcopy(contract)
+        ownership, owner = portable_owner(contract)
+        actor_id = validate_actor(args.actor_id, "actor id")
+        require_portable_owner(owner, actor_id, args.owner_epoch)
+        next_action = args.next_action.strip()
+        reason = args.reason.strip()
+        if not next_action or not reason:
+            raise ValueError("handoff requires non-empty --next-action and --reason")
+        execution = contract.get("execution")
+        if not isinstance(execution, dict):
+            raise ValueError("Portable Contract execution is invalid")
+        execution["next_action"] = next_action
+        if args.pending_verification:
+            execution["pending_verification"] = list(dict.fromkeys(args.pending_verification))
+        contract["workspace"] = {"checkpoint": repository_snapshot(portable_project_root(contract))}
+        ownership["status"] = "ready"
+        contract["updated_at"] = utc_now()
+        write_portable_contract(artifact_dir, original, contract)
+        append_jsonl(
+            artifact_dir / "events.jsonl",
+            {
+                "event": "portable_handoff",
+                "ts": contract["updated_at"],
+                "actor_id": actor_id,
+                "runtime": owner.get("runtime"),
+                "next_action": next_action,
+                "reason": reason,
+            },
+            writer_role="manager",
+            scope="global",
+        )
+        write_portable_capsule(artifact_dir, contract)
+        print(
+            json.dumps(
+                {
+                    "artifact_dir": str(artifact_dir),
+                    "mode": "portable",
+                    "owner": owner,
+                    "status": "ready",
+                    "next_action": next_action,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    return 0
+
+
+def close_portable(args: argparse.Namespace) -> int:
+    artifact_dir = select_portable_artifact(args.path, args.run)
+    assert artifact_dir is not None
+    with locked(artifact_dir / ".portable"):
+        contract = load_object(artifact_dir / "contract.json")
+        errors = validate_portable_artifact_path(artifact_dir / "contract.json")
+        if errors:
+            raise ValueError("invalid Portable Contract: " + "; ".join(errors))
+        original = deepcopy(contract)
+        ownership, owner = portable_owner(contract)
+        actor_id = validate_actor(args.actor_id, "actor id")
+        require_portable_owner(owner, actor_id, args.owner_epoch)
+        reason = args.reason.strip()
+        if not reason:
+            raise ValueError("close requires a non-empty --reason")
+
+        project_root = portable_project_root(contract)
+        additions = [portable_evidence(project_root, value) for value in args.evidence_file]
+        contract["evidence"] = append_unique_values(contract.get("evidence"), additions)
+        execution = contract.get("execution")
+        if not isinstance(execution, dict):
+            raise ValueError("Portable Contract execution is invalid")
+        if args.status == "accepted":
+            blockers = portable_list(execution.get("blockers"))
+            pending = portable_list(execution.get("pending_verification"))
+            if blockers:
+                raise ValueError("accepted Portable Contract cannot have blockers")
+            if pending:
+                raise ValueError("accepted Portable Contract cannot have pending verification")
+            if not contract["evidence"]:
+                raise ValueError("accepted Portable Contract requires evidence")
+
+        now = utc_now()
+        contract["status"] = args.status
+        contract["updated_at"] = now
+        contract["workspace"] = {"checkpoint": repository_snapshot(project_root)}
+        execution["next_action"] = ""
+        execution["terminal_reason"] = reason
+        ownership["status"] = "closed"
+        write_portable_contract(artifact_dir, original, contract)
+        append_jsonl(
+            artifact_dir / "events.jsonl",
+            {
+                "event": "portable_closed",
+                "ts": now,
+                "actor_id": actor_id,
+                "runtime": owner.get("runtime"),
+                "status": args.status,
+                "reason": reason,
+                "evidence_paths": [item["path"] for item in additions],
+                "contract_sha256": sha256(serialized_json(contract)),
+            },
+            writer_role="manager",
+            scope="global",
+        )
+        write_portable_capsule(artifact_dir, contract)
+        print(
+            json.dumps(
+                {
+                    "artifact_dir": str(artifact_dir),
+                    "mode": "portable",
+                    "status": args.status,
+                    "reason": reason,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    return 0
+
+
+def portable_resume(args: argparse.Namespace, artifact_dir: Path) -> int:
+    project_root = portable_project_root(load_object(artifact_dir / "contract.json"))
+    with locked(project_root / ".harness" / ".resume"):
+        with locked(artifact_dir / ".portable"):
+            contract = load_object(artifact_dir / "contract.json")
+            errors = portable_contract_errors(contract, artifact_dir)
+            if errors:
+                raise ValueError("invalid Portable Contract: " + "; ".join(errors))
+            original = deepcopy(contract)
+            ownership, owner = portable_owner(contract)
+            actor_id = validate_actor(args.actor_id, "actor id")
+            runtime = validate_actor(args.runtime.casefold(), "runtime")
+            previous_owner = deepcopy(owner) if str(owner.get("actor_id") or "") else {}
+            same_owner = (
+                str(owner.get("actor_id") or "") == actor_id
+                and str(owner.get("runtime") or "") == runtime
+            )
+            if same_owner:
+                require_portable_owner(owner, actor_id, args.owner_epoch)
+            forced = ownership.get("status") == "active" and bool(previous_owner) and not same_owner
+            takeover_reason = args.takeover_reason.strip()
+            if forced and not takeover_reason:
+                raise ValueError("active owner takeover requires a non-empty takeover reason (--takeover-reason)")
+            if not same_owner:
+                old_epoch = int(owner.get("epoch") or 0)
+                ownership["previous_owner"] = previous_owner
+                ownership["owner"] = {
+                    "actor_id": actor_id,
+                    "runtime": runtime,
+                    "epoch": old_epoch + 1,
+                    "claimed_at": utc_now(),
+                }
+                owner = ownership["owner"]
+                if previous_owner:
+                    ownership["takeover_count"] = int(ownership.get("takeover_count") or 0) + 1
+            ownership["status"] = "active"
+            contract["updated_at"] = utc_now()
+
+            checkpoint = contract.get("workspace")
+            checkpoint = checkpoint.get("checkpoint") if isinstance(checkpoint, dict) else {}
+            checkpoint = checkpoint if isinstance(checkpoint, dict) else {}
+            current_repository = repository_snapshot(project_root)
+            workspace_drift, changed_paths = changed_repository_paths(checkpoint, current_repository)
+            execution = contract.get("execution")
+            next_action = str(execution.get("next_action") or "") if isinstance(execution, dict) else ""
+            projected_next_action = (
+                f"Reconcile workspace drift before continuing: {next_action}"
+                if workspace_drift
+                else next_action
+            )
+            write_portable_contract(artifact_dir, original, contract)
+            append_jsonl(
+                artifact_dir / "events.jsonl",
+                {
+                    "event": "portable_resume",
+                    "ts": contract["updated_at"],
+                    "previous_owner": previous_owner,
+                    "owner": owner,
+                    "forced": forced,
+                    "takeover_reason": takeover_reason,
+                    "workspace_drift": workspace_drift,
+                },
+                writer_role="manager",
+                scope="global",
+            )
+            capsule = write_portable_capsule(
+                artifact_dir,
+                contract,
+                workspace_drift=workspace_drift,
+                changed_paths=changed_paths,
+            )
+            context = contract.get("context")
+            context = context if isinstance(context, dict) else {}
+            capabilities = contract.get("capabilities")
+            capabilities = capabilities if isinstance(capabilities, dict) else {}
+            must_read = ["capsule.md", *portable_list(context.get("must_read"))]
+            read_if_needed = portable_list(context.get("read_if_needed"))
+            if "events.jsonl" not in read_if_needed:
+                read_if_needed.append("events.jsonl")
+            packet = {
+                "protocol": PORTABLE_PROTOCOL,
+                "artifact_dir": str(artifact_dir),
+                "project_root": str(project_root),
+                "capsule_path": str(artifact_dir / "capsule.md"),
+                "capsule": capsule,
+                "next_action": projected_next_action,
+                "must_read": list(dict.fromkeys(must_read)),
+                "read_if_needed": list(dict.fromkeys(read_if_needed)),
+                "required_capabilities": portable_list(capabilities.get("required")),
+                "optional_capabilities": portable_list(capabilities.get("optional")),
+                "owner": owner,
+                "previous_owner": previous_owner,
+                "forced_takeover": forced,
+                "workspace_drift": workspace_drift,
+                "changed_paths": changed_paths,
+                "integrity": "pass",
+            }
+            print(json.dumps(packet, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def pack_portable(args: argparse.Namespace) -> int:
+    artifact_dir = select_portable_artifact(args.path, args.run)
+    assert artifact_dir is not None
+    contract = load_object(artifact_dir / "contract.json")
+    errors = portable_contract_errors(contract, artifact_dir)
+    if errors:
+        raise ValueError("invalid Portable Contract: " + "; ".join(errors))
+    capsule = write_portable_capsule(artifact_dir, contract, max_chars=args.max_chars)
+    print(
+        json.dumps(
+            {
+                "artifact_dir": str(artifact_dir),
+                "capsule_path": str(artifact_dir / "capsule.md"),
+                "capsule_chars": len(capsule),
+                "max_chars": args.max_chars,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
 
 
 def build_resume_packet(
@@ -730,7 +1624,9 @@ def discover_runs(args: argparse.Namespace) -> int:
 
 
 def checkpoint_run(args: argparse.Namespace) -> int:
-    artifact_dir = select_unique_active_run(args.path, args.run)
+    protocol, artifact_dir = select_active_protocol_artifact(args.path, args.run)
+    if protocol == "portable":
+        return portable_checkpoint(args, artifact_dir)
     with locked(artifact_dir / ".harnessctl"):
         ensure_trace_integrity(artifact_dir)
         state_path = artifact_dir / "run_state.json"
@@ -831,7 +1727,9 @@ def checkpoint_run(args: argparse.Namespace) -> int:
 
 
 def handoff_run(args: argparse.Namespace) -> int:
-    artifact_dir = select_unique_active_run(args.path, args.run)
+    protocol, artifact_dir = select_active_protocol_artifact(args.path, args.run)
+    if protocol == "portable":
+        return portable_handoff(args, artifact_dir)
     with locked(artifact_dir / ".harnessctl"):
         ensure_trace_integrity(artifact_dir)
         state_path = artifact_dir / "run_state.json"
@@ -906,6 +1804,9 @@ def handoff_run(args: argparse.Namespace) -> int:
 
 
 def resume_run(args: argparse.Namespace) -> int:
+    protocol, artifact_dir = select_active_protocol_artifact(args.path, args.run)
+    if protocol == "portable":
+        return portable_resume(args, artifact_dir)
     target = args.path.expanduser().resolve()
     if target.is_file() and target.name == "run_state.json":
         coordination_root = project_root_for_artifact(target.parent)
@@ -915,7 +1816,6 @@ def resume_run(args: argparse.Namespace) -> int:
         coordination_root = target
 
     with locked(coordination_root / "workspace" / ".resume"):
-        artifact_dir = select_unique_active_run(target, args.run)
         with locked(artifact_dir / ".harnessctl"):
             recovery_plan = plan_artifact_recovery(artifact_dir)
             errors = artifact_validation_errors_with_recovery(artifact_dir, recovery_plan)
@@ -1152,6 +2052,30 @@ def task_refresh(args: argparse.Namespace) -> int:
         return task_refresh_unlocked(args)
 
 
+ACCEPTANCE_GATE_ARG_FIELDS = (
+    ("gate_tdd_trace_path", "tdd_trace_path"),
+    ("gate_red_command", "red_command"),
+    ("gate_red_result", "red_result"),
+    ("gate_red_failure_reason", "red_failure_reason"),
+    ("gate_green_command", "green_command"),
+    ("gate_green_result", "green_result"),
+    ("gate_refactor_check", "refactor_check"),
+    ("gate_substitute_check", "substitute_check"),
+)
+
+
+def acceptance_gate_updates_from_args(args: argparse.Namespace) -> dict[str, str]:
+    updates: dict[str, str] = {}
+    for arg_name, field_name in ACCEPTANCE_GATE_ARG_FIELDS:
+        value = str(getattr(args, arg_name, "") or "").strip()
+        if value:
+            updates[field_name] = value
+    no_test_reason = str(getattr(args, "no_test_reason", "") or "").strip()
+    if no_test_reason:
+        updates["no_test_reason"] = no_test_reason
+    return updates
+
+
 def acceptance_set_unlocked(args: argparse.Namespace) -> int:
     artifact_dir = args.artifact_dir.expanduser().resolve()
     registry_path = artifact_dir / "acceptance_registry.json"
@@ -1206,8 +2130,11 @@ def acceptance_set_unlocked(args: argparse.Namespace) -> int:
     criterion["evidence"] = evidence
     criterion["pass_algorithm"] = pass_algorithm
     criterion["blocking_issues"] = blocking_issues if args.status in {"fail", "blocked"} else []
-    if args.no_test_reason:
-        criterion["verification_gate"]["no_test_reason"] = args.no_test_reason.strip()
+    gate_updates = acceptance_gate_updates_from_args(args)
+    if gate_updates:
+        if not isinstance(criterion.get("verification_gate"), dict):
+            criterion["verification_gate"] = {}
+        criterion["verification_gate"].update(gate_updates)
     registry["updated_at"] = utc_now()
     validate_candidate(artifact_dir, "acceptance_registry.json", registry, validate_acceptance_registry)
     commit_transition(
@@ -1222,6 +2149,7 @@ def acceptance_set_unlocked(args: argparse.Namespace) -> int:
             "to_status": args.status,
             "evidence": additions,
             "blocking_issues": args.blocking_issue,
+            "verification_gate_updates": sorted(gate_updates),
         },
         transaction_id=transaction_id,
     )
@@ -1248,8 +2176,11 @@ def acceptance_refresh_unlocked(args: argparse.Namespace) -> int:
         raise ValueError("current acceptance registry is invalid: " + "; ".join(current_errors))
 
     criterion = find_unique(registry.get("criteria"), args.criterion_id, "acceptance criterion")
-    if criterion.get("status") != "pass":
-        raise ValueError("acceptance evidence refresh requires a criterion with status pass")
+    criterion_status = str(criterion.get("status") or "")
+    if criterion_status not in {"pass", "blocked", "fail", "scoped_out"}:
+        raise ValueError(
+            "acceptance evidence refresh requires a terminal or decisioned criterion status"
+        )
     if not args.evidence_file:
         raise ValueError("acceptance evidence refresh requires --evidence-file")
 
@@ -1289,7 +2220,7 @@ def acceptance_refresh_unlocked(args: argparse.Namespace) -> int:
         {
             "event": "acceptance_evidence_refresh",
             "criterion_id": args.criterion_id,
-            "status": "pass",
+            "status": criterion_status,
             "evidence": additions,
             "replaced_paths": sorted(replacement_paths),
         },
@@ -1456,7 +2387,7 @@ def dispatch_create_unlocked(args: argparse.Namespace) -> int:
         raise ValueError("model routing values must not contain control characters")
     if args.escalation_count < 0:
         raise ValueError("escalation count must be non-negative")
-    sealed_profiles = model_profiles_for(runtime)
+    sealed_profiles = model_profiles_for(runtime, state.get("routing_policy"))
     if sealed_profiles is not None:
         configured = sealed_profiles[args.profile]
         requested_model = requested_model or configured["model"]
@@ -2188,42 +3119,76 @@ def validate_active_tdd_gates(
     state: dict[str, object],
     registry: dict[str, object],
 ) -> list[str]:
-    active_modes: set[str] = set()
+    def gate_satisfies(required_mode: str, actual_mode: str) -> bool:
+        if actual_mode == required_mode:
+            return True
+        return required_mode == "test_first_evidence" and actual_mode == "strict_tdd"
+
+    required_modes: dict[str, str] = {}
     tasks = state.get("tasks")
     for item in tasks if isinstance(tasks, list) else []:
         if isinstance(item, dict) and item.get("status") in {"passed", "merged"}:
             gate = item.get("verification_gate")
-            if isinstance(gate, dict):
-                active_modes.add(str(gate.get("mode") or ""))
+            task_id = str(item.get("id") or "").strip()
+            mode = str(gate.get("mode") or "") if isinstance(gate, dict) else ""
+            if task_id and mode in {"strict_tdd", "test_first_evidence"}:
+                required_modes[task_id] = mode
     criteria = registry.get("criteria")
     for item in criteria if isinstance(criteria, list) else []:
         if isinstance(item, dict) and item.get("status") == "pass":
             gate = item.get("verification_gate")
-            if isinstance(gate, dict):
-                active_modes.add(str(gate.get("mode") or ""))
-    if not active_modes.intersection({"strict_tdd", "test_first_evidence"}):
+            mode = str(gate.get("mode") or "") if isinstance(gate, dict) else ""
+            if mode not in {"strict_tdd", "test_first_evidence"}:
+                continue
+            linked_tasks = item.get("linked_tasks")
+            if isinstance(linked_tasks, list) and linked_tasks:
+                for task_id in linked_tasks:
+                    existing_mode = required_modes.get(str(task_id))
+                    if existing_mode and not gate_satisfies(mode, existing_mode):
+                        return [f"tdd_trace.jsonl: conflicting gate mode for task {task_id}"]
+                    if not existing_mode:
+                        required_modes[str(task_id)] = mode
+    if not required_modes:
         return []
     trace_path = artifact_dir / "tdd_trace.jsonl"
-    events, parse_errors = load_events(trace_path)
-    if parse_errors:
-        return [f"tdd_trace.jsonl: {error}" for error in parse_errors]
-    gate = latest_gate_decision(events)
-    required_mode = "strict_tdd" if "strict_tdd" in active_modes else "test_first_evidence"
-    actual_mode = gate_mode_of(gate) if gate is not None else ""
-    if actual_mode != required_mode:
-        return [f"tdd_trace.jsonl: latest gate mode must be {required_mode}; got {actual_mode or 'missing'}"]
-    return [f"tdd_trace.jsonl: {error}" for error in validate_tdd_trace(trace_path, source_paths=[], tolerance_seconds=1.0)]
+    errors: list[str] = []
+    for task_id, required_mode in sorted(required_modes.items()):
+        scoped_events, parse_errors = load_events(trace_path)
+        if parse_errors:
+            errors.extend(f"tdd_trace.jsonl: {error}" for error in parse_errors)
+            continue
+        scoped_events = [
+            event for event in scoped_events if str(event.data.get("task_id") or "").strip() == task_id
+        ]
+        gate = latest_gate_decision(scoped_events)
+        actual_mode = gate_mode_of(gate) if gate is not None else ""
+        if not gate_satisfies(required_mode, actual_mode):
+            errors.append(
+                f"tdd_trace.jsonl: task {task_id} gate mode must be {required_mode}; got {actual_mode or 'missing'}"
+            )
+            continue
+        errors.extend(
+            f"tdd_trace.jsonl task {task_id}: {error}"
+            for error in validate_tdd_trace(
+                trace_path,
+                source_paths=[],
+                tolerance_seconds=1.0,
+                require_wrapper=True,
+                task_id=task_id,
+            )
+        )
+    return errors
 
 
 def artifact_validation_errors(
     artifact_dir: Path, *, trace_path: Path | None = None
 ) -> list[str]:
     trace_path = trace_path or artifact_dir / "trace.jsonl"
+    errors: list[str] = validate_artifact_dir_binding(artifact_dir)
     validators = (
         (artifact_dir / "run_state.json", validate_run_state),
         (artifact_dir / "acceptance_registry.json", validate_acceptance_registry),
     )
-    errors: list[str] = []
     for path, validator in validators:
         if not path.exists():
             errors.append(f"missing file: {path.name}")
@@ -2234,6 +3199,9 @@ def artifact_validation_errors(
     errors.extend(validate_trace_transactions(trace_path))
     errors.extend(validate_transaction_digest_chain(trace_path))
     errors.extend(validate_canonical_state_digests(artifact_dir, trace_path))
+    lesson_records, lesson_errors = validate_lesson_ledger(artifact_dir)
+    errors.extend(lesson_errors)
+    errors.extend(validate_lesson_trace(artifact_dir, lesson_records))
     errors.extend(validate_evidence_receipts(artifact_dir, trace_path))
     errors.extend(validate_cross_file_invariants(artifact_dir / "run_state.json", artifact_dir / "acceptance_registry.json"))
     if not errors:
@@ -2243,8 +3211,76 @@ def artifact_validation_errors(
     return errors
 
 
+def record_lesson(args: argparse.Namespace) -> int:
+    artifact_dir = args.artifact_dir.expanduser().resolve()
+    with locked(artifact_dir / ".harnessctl"):
+        ensure_trace_integrity(artifact_dir)
+        state = load_object(artifact_dir / "run_state.json")
+        require_current_owner(state, args.actor_id, args.owner_epoch)
+        existing, errors = validate_lesson_ledger(artifact_dir)
+        if errors:
+            raise ValueError("lesson ledger is invalid: " + "; ".join(errors))
+        lesson_id = validate_actor(args.lesson_id or str(uuid.uuid4()), "lesson id")
+        if any(str(item.get("id")) == lesson_id for item in existing):
+            raise ValueError(f"lesson id already exists: {lesson_id}")
+        evidence: list[dict[str, object]] = []
+        for value in args.evidence_file:
+            path, normalized = artifact_evidence_path(artifact_dir, value)
+            evidence.append(
+                {
+                    "path": normalized,
+                    "sha256": sha256(path.read_bytes()),
+                    "size_bytes": path.stat().st_size,
+                }
+            )
+        record = {
+            "schema_version": 1,
+            "id": lesson_id,
+            "recorded_at": utc_now(),
+            "status": "verified",
+            "verification_tier": args.verification_tier,
+            "source_case": args.source_case.strip(),
+            "category": args.category.strip(),
+            "symptom": args.symptom.strip(),
+            "root_cause": args.root_cause.strip(),
+            "fix": args.fix.strip(),
+            "verification": args.verification.strip(),
+            "reusable_rule": args.reusable_rule.strip(),
+            "verified_by": args.actor_id.strip(),
+            "evidence": evidence,
+        }
+        if not all(record[key] for key in ("source_case", "category", "symptom", "root_cause", "fix", "verification", "reusable_rule")):
+            raise ValueError("lesson fields must not be empty")
+        line_bytes = (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        append_jsonl(lesson_ledger_path(artifact_dir), record, writer_role="manager", scope="global")
+        append_jsonl(
+            artifact_dir / "trace.jsonl",
+            {
+                "event": "lesson_recorded",
+                "lesson_id": lesson_id,
+                "lesson_sha256": sha256(line_bytes),
+                "source_case": args.source_case.strip(),
+                "verification_tier": args.verification_tier,
+            },
+            writer_role="manager",
+            scope="global",
+        )
+        print(f"lesson_recorded={lesson_id}")
+    return 0
+
+
 def validate_artifact(args: argparse.Namespace) -> int:
     artifact_dir = args.artifact_dir.expanduser().resolve()
+    contract_path = artifact_dir if artifact_dir.is_file() else artifact_dir / "contract.json"
+    if contract_path.is_file() and contract_path.name == "contract.json":
+        errors = validate_portable_artifact_path(contract_path)
+        if errors:
+            print(f"FAIL {contract_path.parent}")
+            for error in errors:
+                print(f"- {error}")
+            return 1
+        print(f"PASS {contract_path.parent}")
+        return 0
     errors = artifact_validation_errors(artifact_dir)
     if errors:
         print(f"FAIL {artifact_dir}")
@@ -2256,12 +3292,65 @@ def validate_artifact(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Guarded Full Harness state control.")
+    parser = argparse.ArgumentParser(description="Guarded Portable and Audited Harness state control.")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    materialize_parser = subparsers.add_parser(
+        "materialize", help="Compile an approved native plan into a minimal Portable Contract."
+    )
+    materialize_parser.add_argument("project_root", type=Path)
+    materialize_parser.add_argument("--title", required=True)
+    materialize_parser.add_argument("--slug", default="")
+    materialize_parser.add_argument("--goal", required=True)
+    materialize_parser.add_argument("--done-when", action="append", required=True)
+    materialize_parser.add_argument("--non-goal", action="append", default=[])
+    materialize_parser.add_argument("--constraint", action="append", default=[])
+    materialize_parser.add_argument("--current-milestone", default="")
+    materialize_parser.add_argument("--next-action", required=True)
+    materialize_parser.add_argument("--required-capability", action="append", default=[])
+    materialize_parser.add_argument("--optional-capability", action="append", default=[])
+    materialize_parser.add_argument("--must-read", action="append", default=[])
+    materialize_parser.add_argument("--read-if-needed", action="append", default=[])
+    materialize_parser.add_argument("--max-chars", type=int, default=DEFAULT_CAPSULE_MAX_CHARS)
+    materialize_parser.set_defaults(handler=materialize_portable)
+
+    pack_parser = subparsers.add_parser("pack", help="Regenerate a bounded Portable resume capsule.")
+    pack_parser.add_argument("path", type=Path)
+    pack_parser.add_argument("--run", default="")
+    pack_parser.add_argument("--max-chars", type=int, default=DEFAULT_CAPSULE_MAX_CHARS)
+    pack_parser.set_defaults(handler=pack_portable)
+
+    close_parser = subparsers.add_parser("close", help="Close a Portable Contract with a terminal status.")
+    close_parser.add_argument("path", type=Path)
+    close_parser.add_argument("--run", default="")
+    close_parser.add_argument("--status", choices=sorted(PORTABLE_TERMINAL_STATUSES), required=True)
+    close_parser.add_argument("--actor-id", required=True)
+    close_parser.add_argument("--owner-epoch", type=int, required=True)
+    close_parser.add_argument("--reason", required=True)
+    close_parser.add_argument("--evidence-file", action="append", default=[])
+    close_parser.set_defaults(handler=close_portable)
 
     validate_parser = subparsers.add_parser("validate", help="Validate protocol JSON and JSONL files.")
     validate_parser.add_argument("artifact_dir", type=Path)
     validate_parser.set_defaults(handler=validate_artifact)
+
+    lesson_parser = subparsers.add_parser(
+        "lesson-add", help="Record an evidence-backed, reusable lesson in the current Full run."
+    )
+    lesson_parser.add_argument("artifact_dir", type=Path)
+    lesson_parser.add_argument("--lesson-id", default="")
+    lesson_parser.add_argument("--source-case", required=True)
+    lesson_parser.add_argument("--category", required=True)
+    lesson_parser.add_argument("--symptom", required=True)
+    lesson_parser.add_argument("--root-cause", required=True)
+    lesson_parser.add_argument("--fix", required=True)
+    lesson_parser.add_argument("--verification", required=True)
+    lesson_parser.add_argument("--reusable-rule", required=True)
+    lesson_parser.add_argument("--verification-tier", choices=VERIFICATION_TIERS, default="flow")
+    lesson_parser.add_argument("--evidence-file", action="append", required=True)
+    lesson_parser.add_argument("--actor-id", required=True)
+    lesson_parser.add_argument("--owner-epoch", type=int)
+    lesson_parser.set_defaults(handler=record_lesson)
 
     discover_parser = subparsers.add_parser("discover", help="Discover active Full Harness runs.")
     discover_parser.add_argument("path", type=Path)
@@ -2277,6 +3366,13 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint_parser.add_argument("--current-task", default="")
     checkpoint_parser.add_argument("--next-action", required=True)
     checkpoint_parser.add_argument("--pending-verification", action="append", default=[])
+    checkpoint_parser.add_argument("--clear-pending-verification", action="store_true")
+    checkpoint_parser.add_argument("--completed", action="append", default=[])
+    checkpoint_parser.add_argument("--blocker", action="append", default=[])
+    checkpoint_parser.add_argument("--resolve-blocker", action="append", default=[])
+    checkpoint_parser.add_argument("--decision", default="")
+    checkpoint_parser.add_argument("--decision-reason", default="")
+    checkpoint_parser.add_argument("--evidence-file", action="append", default=[])
     checkpoint_parser.add_argument("--reason", required=True)
     checkpoint_parser.set_defaults(handler=checkpoint_run)
 
@@ -2339,12 +3435,20 @@ def build_parser() -> argparse.ArgumentParser:
     acceptance_parser.add_argument("--pass-algorithm", default="")
     acceptance_parser.add_argument("--blocking-issue", action="append", default=[])
     acceptance_parser.add_argument("--no-test-reason", default="")
+    acceptance_parser.add_argument("--gate-tdd-trace-path", default="")
+    acceptance_parser.add_argument("--gate-red-command", default="")
+    acceptance_parser.add_argument("--gate-red-result", default="")
+    acceptance_parser.add_argument("--gate-red-failure-reason", default="")
+    acceptance_parser.add_argument("--gate-green-command", default="")
+    acceptance_parser.add_argument("--gate-green-result", default="")
+    acceptance_parser.add_argument("--gate-refactor-check", default="")
+    acceptance_parser.add_argument("--gate-substitute-check", default="")
     acceptance_parser.add_argument("--actor-id", default="")
     acceptance_parser.add_argument("--owner-epoch", type=int)
     acceptance_parser.set_defaults(handler=acceptance_set)
 
     refresh_parser = subparsers.add_parser(
-        "acceptance-refresh", help="Replace receipts for files backing an accepted criterion."
+        "acceptance-refresh", help="Replace receipts for files backing an accepted or decisioned criterion."
     )
     refresh_parser.add_argument("artifact_dir", type=Path)
     refresh_parser.add_argument("--criterion-id", required=True)

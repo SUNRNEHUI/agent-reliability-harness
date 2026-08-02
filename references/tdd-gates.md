@@ -34,6 +34,12 @@ reference the generated trace. Hand-written trace events are lower-trust
 evidence and should be treated as advisory unless corroborated by command
 output, filesystem state, or an external runner.
 
+The selected gate is immutable for one trace: adding a later, looser
+`gate_decision` does not replace the original decision. RED or GAP evidence must
+precede the first implementation `file_modified` event, and GREEN must follow
+it. A GAP recorded after implementation is tests-after evidence, not test-first
+evidence.
+
 ## Gate Levels
 
 The dispatcher uses two separate gates. Do not collapse them into a generic "tested" claim.
@@ -83,6 +89,22 @@ source file whose modification time predates the RED event, and it requires a
 later GREEN/REFACTOR/verification PASS. Use this only for files that belong to
 the current TDD cycle; old untouched source files should not be passed as
 cycle evidence.
+
+For protected Full acceptance, require wrapper provenance explicitly:
+
+```bash
+python3 scripts/tdd_gate_check.py --require-wrapper <artifact-dir>/tdd_trace.jsonl
+```
+
+`harnessctl validate` applies this protected check automatically when a passed
+task or criterion uses `strict_tdd` or `test_first_evidence`. The marker reduces
+accidental hand-written evidence; it is not a cryptographic signature, so the
+manager must still re-run the critical command.
+
+For traces shared by multiple implementation tasks, pass `--task-id` to inspect
+one task's evidence. The Full controller performs this scoping automatically;
+without it, a global RED/GREEN pair could accidentally combine different task
+lifecycles.
 
 For bug fixes, strict TDD is the default whenever a focused failing test or
 reproduction can be created at reasonable cost. A bugfix report must not claim

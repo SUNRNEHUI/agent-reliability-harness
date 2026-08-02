@@ -1,7 +1,7 @@
 {
   "version": 1,
   "evidence_policy": "typed-v1",
-  "routing_policy": "cost-aware-v1",
+  "routing_policy": "progress-bounded-v2",
   "created_at": "",
   "updated_at": "",
   "title": "",
@@ -106,7 +106,8 @@
         "progress": "progress.md",
         "acceptance_registry": "acceptance_registry.json",
         "trace": "trace.jsonl",
-        "tdd_trace": "tdd_trace.jsonl"
+        "tdd_trace": "tdd_trace.jsonl",
+        "lessons": "lessons.jsonl"
       },
       "delegation_state": [],
       "document_priority": [

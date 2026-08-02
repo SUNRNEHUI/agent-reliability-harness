@@ -268,27 +268,87 @@ def test_trigger_shortcuts_route_without_forcing_full() -> None:
     default_prompt = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8").lower()
     master_prompt = (ROOT / "master-prompt.md").read_text(encoding="utf-8").lower()
 
-    for trigger in ("你是主 agent", "写一个 harness", "写一个harness"):
+    for trigger in ("你是主 agent", "写一个 harness"):
         assert trigger in skill
-        assert trigger in default_prompt
         assert trigger in master_prompt
     for text in (default_prompt, master_prompt):
-        assert "multi-agent dispatch" in text
-        assert "you are the main agent" in text
-        assert "do not force full" in text
-        for mode in ("direct", "lite", "full"):
+        assert "multi-agent" in text
+        assert "main agent" in text
+        for mode in ("native", "portable", "audited"):
             assert mode in text
+    assert "do not" in master_prompt
+    assert "$agent-reliability-harness" in default_prompt
 
 
 def test_routing_and_superpowers_policies_are_present() -> None:
     routing = (ROOT / "references" / "model-routing.md").read_text(encoding="utf-8")
     adapter = (ROOT / "adapters" / "codex.md").read_text(encoding="utf-8")
     integration = (ROOT / "references" / "superpowers-integration.md").read_text(encoding="utf-8")
-    for term in ("gpt-5.6-luna", "gpt-5.6-sol", "deterministic selector", "validation failures"):
+    for term in ("gpt-5.6-luna", "gpt-5.6-sol", "Luna `max`", "bounded Sol"):
         assert term in routing
     assert "gpt-5.6-luna" in adapter
+    assert "progress circuit breaker" in adapter.casefold()
     for term in ("Do not escalate", "review gates", "separate checks", "Do not copy whole"):
         assert term in integration
+
+
+def test_progress_circuit_breaker_is_in_hot_prompts() -> None:
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    master = (ROOT / "master-prompt.md").read_text(encoding="utf-8")
+    worker = (ROOT / "sub-prompt.md").read_text(encoding="utf-8")
+    for term in ("Progress Circuit Breaker", "STALLED", "falsifying experiment"):
+        assert term in skill
+    assert "must not increase reasoning effort" in skill
+    assert "STALLED" in master
+    assert "new evidence" in worker
+
+
+def test_plan_native_entry_is_lean_and_provider_neutral() -> None:
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    master = (ROOT / "master-prompt.md").read_text(encoding="utf-8")
+    metadata = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
+
+    assert len(skill.split()) <= 1200
+    assert len(master.split()) <= 450
+    for term in ("Native", "Portable", "Audited", "materialize", "capsule"):
+        assert term in skill
+    for provider_slug in ("gpt-5.6-luna", "gpt-5.6-sol", "grok-api"):
+        assert provider_slug not in skill
+        assert provider_slug not in master
+    assert "Direct / Lite / Full" not in skill
+    assert len(metadata.split()) <= 120
+    assert "$agent-reliability-harness" in metadata
+    for term in ("Native", "Portable", "Audited"):
+        assert term in metadata
+
+
+def test_runtime_model_maps_are_outside_core_schema() -> None:
+    schema = (ROOT / "scripts" / "harness_schema.py").read_text(encoding="utf-8")
+    profiles = (ROOT / "scripts" / "runtime_profiles.py").read_text(encoding="utf-8")
+    router = (ROOT / "scripts" / "model_router.py").read_text(encoding="utf-8")
+    for provider_slug in ("gpt-5.6-luna", "gpt-5.6-sol", "grok-api"):
+        assert provider_slug not in schema
+        assert provider_slug in profiles
+    assert "from runtime_profiles import" in router
+
+
+def test_runtime_package_contains_portable_contract_runtime() -> None:
+    temp = Path(tempfile.mkdtemp(prefix="arh-test-portable-package-"))
+    try:
+        package_dir = temp / "pkg"
+        run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
+        for relative in (
+            "references/portable-contract.md",
+            "scripts/protocol_regression_harness.py",
+            "scripts/test_artifact_binding.py",
+            "scripts/test_lessons.py",
+            "scripts/test_plan_native_portable.py",
+            "scripts/runtime_profiles.py",
+            "templates/worker_result.json",
+        ):
+            assert (package_dir / relative).is_file(), relative
+    finally:
+        shutil.rmtree(temp)
 
 
 def main() -> int:
@@ -302,6 +362,10 @@ def main() -> int:
         test_parallel_package_checks_use_isolated_temp_dirs,
         test_trigger_shortcuts_route_without_forcing_full,
         test_routing_and_superpowers_policies_are_present,
+        test_progress_circuit_breaker_is_in_hot_prompts,
+        test_plan_native_entry_is_lean_and_provider_neutral,
+        test_runtime_model_maps_are_outside_core_schema,
+        test_runtime_package_contains_portable_contract_runtime,
     ]
     for test in tests:
         test()

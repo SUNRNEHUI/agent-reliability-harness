@@ -201,6 +201,7 @@ def default_state_layers(mode: str = "full", state_witness_required: bool = Fals
         "acceptance_registry": "acceptance_registry.json",
         "trace": "trace.jsonl",
         "tdd_trace": "tdd_trace.jsonl",
+        "lessons": "lessons.jsonl",
     }
     if state_witness_required:
         artifact_paths["state_witness"] = "state_witness.md"
@@ -238,7 +239,12 @@ def main() -> int:
     parser.add_argument("--slug", help="Stable task slug. Derived from --title when omitted.")
     parser.add_argument("--title", default="multi-agent-task", help="Human-readable task title.")
     parser.add_argument("--agents", default="", help="Comma-separated agent task names, e.g. frontend,backend,tests.")
-    parser.add_argument("--mode", choices=("direct", "lite", "full"), default="full", help="Artifact mode to initialize.")
+    parser.add_argument(
+        "--mode",
+        choices=("native", "portable", "audited", "direct", "lite", "full"),
+        default="audited",
+        help="Artifact mode. direct/lite/full remain legacy aliases; use harnessctl materialize for Portable.",
+    )
     parser.add_argument(
         "--with-synthesis",
         action="store_true",
@@ -258,9 +264,17 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated files.")
     args = parser.parse_args()
 
-    if args.mode == "direct":
-        print("Direct mode does not need orchestration artifacts.")
+    if args.mode in {"native", "direct"}:
+        print("Native mode uses the runtime plan and does not need harness artifacts.")
         return 0
+
+    if args.mode == "portable":
+        raise SystemExit(
+            "Portable mode requires an approved plan; use harnessctl.py materialize with goal, done_when, and next_action."
+        )
+
+    if args.mode == "audited":
+        args.mode = "full"
 
     if args.with_synthesis and args.mode != "full":
         raise SystemExit("--with-synthesis is only valid with --mode full")
@@ -418,6 +432,7 @@ def main() -> int:
             "acceptance_registry.json",
             "trace.jsonl",
             "tdd_trace.jsonl",
+            "lessons.jsonl",
             "run_state.json",
         ]
         if args.with_synthesis:
@@ -521,6 +536,7 @@ def main() -> int:
             )
             + "\n",
             "tdd_trace.jsonl": "",
+            "lessons.jsonl": "",
             "run_state.json": {
                 "version": SCHEMA_VERSION,
                 "evidence_policy": EVIDENCE_POLICY,

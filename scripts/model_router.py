@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select a cost-aware model profile from observable task signals."""
+"""Select a progress-bounded model profile from observable task signals."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ import argparse
 import json
 import os
 
-from harness_schema import (
-    MODEL_ROUTING_POLICY,
+from harness_schema import MODEL_ROUTING_POLICY
+from runtime_profiles import (
     SUPPORTED_MODEL_RUNTIMES,
     model_profiles_for,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Select a cost-aware model profile.")
+    parser = argparse.ArgumentParser(description="Select a progress-bounded model profile.")
     parser.add_argument(
         "--runtime",
         default="codex",
@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--high-risk", action="store_true")
     parser.add_argument("--worker-conflict", action="store_true")
     parser.add_argument("--validation-failures", type=int, default=0)
+    parser.add_argument("--no-progress-cycles", type=int, default=0)
+    parser.add_argument(
+        "--new-diagnosis",
+        action="store_true",
+        help="Confirm that a stalled path has a new, bounded diagnosis before rerouting.",
+    )
     parser.add_argument(
         "--allow-env-override",
         action="store_true",
@@ -39,14 +45,18 @@ def parse_args() -> argparse.Namespace:
 def select_profile(args: argparse.Namespace) -> tuple[str, list[str]]:
     if args.validation_failures < 0:
         raise ValueError("validation failures must be non-negative")
-    if args.high_risk or args.worker_conflict or args.validation_failures >= 2:
+    if args.no_progress_cycles < 0:
+        raise ValueError("no-progress cycles must be non-negative")
+    if args.validation_failures >= 2 or args.no_progress_cycles >= 2:
+        if not args.new_diagnosis:
+            raise ValueError("stalled execution requires a new diagnosis before routing")
+        return "planner", ["fresh_diagnosis_after_stall"]
+    if args.high_risk or args.worker_conflict:
         reasons = []
         if args.high_risk:
             reasons.append("high_risk")
         if args.worker_conflict:
             reasons.append("worker_conflict")
-        if args.validation_failures >= 2:
-            reasons.append("repeated_validation_failure")
         return "critical_reviewer", reasons
     if args.fuzzy or args.harness_synthesis:
         return "planner", ["fuzzy_goal" if args.fuzzy else "harness_synthesis"]

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from harness_schema import ACCEPTANCE_STATUSES as VALID_ACCEPTANCE_STATUSES
+from harness_schema import TERMINAL_RUN_STATUSES
 from harnessctl import (
     validate_active_tdd_gates,
     validate_canonical_state_digests,
@@ -234,19 +235,23 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
         )
         checkpoint = continuation.get("checkpoint")
         checkpoint = checkpoint if isinstance(checkpoint, dict) else {}
-        lines.append(
-            "Checkpoint: "
-            f"sequence={checkpoint.get('sequence', 0)} | "
-            f"task={checkpoint.get('current_task') or 'none'} | "
-            f"next={checkpoint.get('next_action') or 'none'}"
-        )
-        if continuation_status == "ready":
-            readiness = "ready"
-        elif int(checkpoint.get("sequence") or 0) > 0:
-            readiness = "checkpointed"
+        if status in TERMINAL_RUN_STATUSES:
+            lines.append("Checkpoint: terminal run; no resume checkpoint required")
+            lines.append("Handoff readiness: terminal")
         else:
-            readiness = "not_checkpointed"
-        lines.append(f"Handoff readiness: {readiness}")
+            lines.append(
+                "Checkpoint: "
+                f"sequence={checkpoint.get('sequence', 0)} | "
+                f"task={checkpoint.get('current_task') or 'none'} | "
+                f"next={checkpoint.get('next_action') or 'none'}"
+            )
+            if continuation_status == "ready":
+                readiness = "ready"
+            elif int(checkpoint.get("sequence") or 0) > 0:
+                readiness = "checkpointed"
+            else:
+                readiness = "not_checkpointed"
+            lines.append(f"Handoff readiness: {readiness}")
 
     registry_status = "not_applicable"
     registry: dict[str, object] | None = None

@@ -29,6 +29,7 @@ RUNTIME_FILES = [
     "references/feature-spec-lane.md",
     "references/harness-protocol.md",
     "references/model-routing.md",
+    "references/portable-contract.md",
     "references/proportionality.md",
     "references/roles.md",
     "references/spec-synthesis.md",
@@ -42,13 +43,18 @@ RUNTIME_FILES = [
     "scripts/harness_test_run.py",
     "scripts/harnessctl.py",
     "scripts/model_router.py",
+    "scripts/protocol_regression_harness.py",
+    "scripts/runtime_profiles.py",
     "scripts/runtime_state.py",
     "scripts/score_harness.py",
     "scripts/score_skill_protocol.py",
     "scripts/state_witness_check.py",
     "scripts/status.py",
     "scripts/tdd_gate_check.py",
+    "scripts/test_artifact_binding.py",
+    "scripts/test_lessons.py",
     "scripts/test_model_routing.py",
+    "scripts/test_plan_native_portable.py",
     "scripts/validate_report.py",
     "scripts/validate_workspace.py",
     "templates/acceptance_registry.json",
@@ -64,6 +70,7 @@ RUNTIME_FILES = [
     "templates/task_spec.md",
     "templates/tdd_trace.jsonl",
     "templates/trace.jsonl",
+    "templates/worker_result.json",
 ]
 
 
@@ -151,7 +158,7 @@ def compare_dirs(expected: Path, actual: Path) -> list[str]:
             differences.append(f"missing in install: {relative / name}")
         ignored_generated = {"__pycache__"}
         if relative == Path(""):
-            ignored_generated.add("workspace")
+            ignored_generated.update({"workspace", ".harness"})
         for name in comparison.right_only:
             if name in ignored_generated:
                 continue

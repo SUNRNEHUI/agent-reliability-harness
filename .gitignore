@@ -1,4 +1,5 @@
 workspace/
+.harness/
 .worktrees/
 __pycache__/
 *.pyc

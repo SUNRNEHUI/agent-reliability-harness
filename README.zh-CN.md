@@ -2,22 +2,27 @@
 
 简体中文 | [English](README.md)
 
-Agent Reliability Harness，曾使用 Agent Dispatch Harness 和 Multi-Agent Dispatcher 作为项目名，是面向 AI 编码代理的 skill，用于把明确的多智能体请求路由到最合适的执行模式。它避免小任务过度调度，并为长任务、高风险任务、可续跑任务和需要证据验收的任务提供持久化 harness。
+Agent Reliability Harness 是一个面向 Codex、Claude Code、Grok 及其他具备文件与
+shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运行时原生 Plan；只有
+任务必须跨越边界时才物化紧凑、provider-neutral 的合同；只有风险需要时才增加审计控制。
 
-当前版本：**v7.4.0** · 2026-07-18
+当前版本：**v9.1.0** · 2026-08-02
 
 ---
 
 ## 概览
 
-多智能体执行只在任务存在清晰的独立责任边界，或需要持久化协同时才有明显价值。本 skill 将“用户授权多智能体”与“实际启动多智能体”分开处理：用户可以请求多智能体工作，但主代理仍需要判断调度是否真的能提升结果质量。
+现代 agent 已经具备规划、任务跟踪、工具调用和 worker 管理能力。再在 prompt 中实现
+第二套状态机会浪费上下文，并制造相互竞争的真相源。本 skill 只补充运行时无法可靠
+带过会话或模型边界的部分。
 
 主代理始终负责：
 
-- 选择执行模式
-- 定义目标、非目标、责任边界和验证要求
-- 在有必要时把边界清晰的任务分配给子代理
-- 合并结果并处理冲突
+- 选择 Native、Portable 或 Audited
+- 定义结果、约束、授权边界和可观察的 `done_when`
+- 只物化昂贵或不安全的重建信息
+- 只在责任边界独立时分配 worker
+- 停止没有产生可观察进展的推理循环
 - 在声明完成前验证验收证据
 
 子代理只负责边界明确的执行、调研、审查或评估任务。最终验收责任仍由主代理承担。
@@ -26,152 +31,166 @@ Agent Reliability Harness，曾使用 Agent Dispatch Harness 和 Multi-Agent Dis
 
 ## 核心能力
 
-- **模式选择：** 在创建 worker 或 artifact 之前，先选择 Direct、Lite 或 Full。
-- **跨运行时模型路由：** 保持可移植 profile，同时分别封装 Codex/Grok 模型映射和真实回退。
-- **选择性调度：** 只有在任务具备清晰责任边界时才分配子代理。
-- **持久化状态：** 为长任务或可续跑任务保存 spec、进度、报告、状态和验收记录。
-- **自动续接：** 新 Codex 或 Grok session 可从项目根自动发现、恢复、验证并原子接管唯一 active Full run。
-- **运行时 TDD 证据：** 用 wrapper-generated trace 和可选文件系统 mtime 校验区分 strict TDD、test-first evidence、substitute verification 和 not applicable。
-- **证据化验收：** 用测试、构建输出、日志、浏览器检查、截图、CI、readback 或 evaluator 报告支持完成结论。
-- **运行时适配：** 将同一套协议映射到 Codex、Claude Code 或类似编码代理环境。
-- **干净打包：** 生成 runtime-only 安装包，避免把仓库文档、本地缓存、生成工作区或私有配置复制到运行目录。
+- **Plan-native 路由：** 复用运行时 Plan，不再生成第二份 checklist。
+- **Portable Contract v2：** 只保存目标、决策、里程碑、阻塞、下一动作、workspace
+  fingerprint、证据摘要、能力和分级读取路径。
+- **有界 resume 上下文：** 在确定性的字符预算内重新生成 `capsule.md`。
+- **Fail-closed 续接：** 写入前检测损坏、drift、过期 owner、多个 active run 和跨协议歧义。
+- **Audited 扩展：** 高风险任务保留 typed receipts、Production State Witness、受保护
+  TDD chronology、evaluator separation 和更强 fencing。
+- **旧格式兼容：** 继续校验和恢复 `handoff-v1` Full artifact。
+- **Adapter-local 路由：** provider 和 model slug 不进入 Portable 核心。
+- **进度熔断：** 每轮必须产生新证据、artifact 变更、测试结果或约束性决策；连续
+  两轮无进展且没有新诊断时停止。
+- **干净打包：** 排除仓库文档、生成的 `.harness/` / `workspace/` artifact、缓存、
+  session 和私有配置。
 
 ---
 
 ## 执行模式
 
-| 模式 | 适用场景 | 行为 |
+| 模式 | 适用场景 | 持久状态 |
 | --- | --- | --- |
-| **Direct** | 任务较小、局部、顺序性强，或一个代理可以更高效完成。 | 不启动子代理，不创建编排 artifact。主代理直接执行并验证。 |
-| **Lite** | 任务有少量可拆分部分，但不需要完整持久化 harness。 | 主代理使用简短计划、明确 owner、紧凑报告和针对性验证。 |
-| **Full** | 任务较长、高风险、可续跑、需要并行、需要 evaluator，或适合 worktree 隔离。 | 主代理运行完整 harness，包括 capability 记录、状态文件、验收清单、trace、报告和验证 gate。 |
+| **Native** | 当前 session 可以完成并验证，丢失上下文不会造成昂贵重建。 | 无；使用运行时 Plan 和任务跟踪。 |
+| **Portable** | 工作可能跨 session/model、等待外部状态，或 worker 结果必须跨 context loss 保留。 | `.harness/<slug>/contract.json`、`events.jsonl`、`capsule.md` |
+| **Audited** | 生产、发布、权限、安全、破坏性变更、owner 争议或高假完成风险需要更强证据。 | Portable 状态加按风险启用的证据与审查扩展；兼容 legacy Full。 |
 
-明确的多智能体请求代表授权进行模式选择，不代表必须启动多个 worker。
-快捷触发词只启动密度路由，不强制进入 Full，也不强制调度多 agent。
+并行与模式相互独立。大型顺序任务可以保持 Native；小型交接可以是 Portable；
+一个文件的高风险变更也可以是 Audited。
 
 ---
 
 ## 适用场景
 
-当用户明确要求以下能力时使用本 skill：
+当请求涉及以下能力时使用本 skill：
 
 - 输入“你是主 agent”或“写一个 harness”以启动密度路由
 - “写一个 harness 来解决这个问题”
-- 多智能体 / 多 Agent
-- sub-agent / 子 agent
-- 代理委托
-- 并行 agent
-- DAG 调度
-- 基于 worktree 的并行执行
+- 持久 handoff 或跨模型续接
+- 可续跑执行或长时间外部等待
+- 多智能体、sub-agent、并行、DAG 或 worktree 协同
 - 分头处理 / 分别派 / 拆给不同 agent
-- 需要可续跑或证据验收的长任务协同
+- 证据化验收或高假完成风险
 
-不要仅仅因为任务较大就使用本 skill。如果用户没有授权多智能体执行，应继续使用普通单代理工作流；当多智能体确实能降低风险时，可以简要提出建议。
+触发 skill 不等于选择最重模式。普通工作仍应保持 Native；只有真实存在并行责任边界时
+才使用 worker。
 
 ---
 
 ## 运行流程
 
 ```text
-Context Intake
--> Mode Selection: Direct / Lite / Full
--> Execute Selected Mode
-   Direct: 实现、验证、汇报
-   Lite: 协调边界清晰的任务片段、验证、汇报
-   Full: capability gate、acceptance registry、state machine、trace、evaluator
--> Merge / Handoff
+Native Plan
+-> 定义 outcome / constraints / done_when / approval boundary
+-> 选择 Native / Portable / Audited
+-> 执行；必要时使用有界 worker
+-> 连续两轮无进展时停止或重新诊断
+-> 用可观察证据验证
+-> 只在持久边界 checkpoint 或 handoff
 ```
 
-主代理应始终选择能够保证质量和验证的最轻模式。
+主代理应选择能够保证安全执行和真实完成的最轻模式。不要把原生 Plan 再复制到 JSON
+或 Markdown。
+
+## 进度与 Codex 路由
+
+进展只包括新证据、artifact 变更、测试结果或约束性决策。一旦存在能区分当前假设的
+可逆操作，就执行它，不继续扩展计划。连续两轮无进展后，记录事实、假设、当前假说和
+一个证伪实验；仍没有新证据时停止该推理链。
+
+当 Codex 支持显式路由时，当前策略让父 Agent 使用 Sol `max` 负责规划和验收，并让
+Luna `max` 承担确有必要的长时间实现、集成和机械可验证执行。Sol worker 仍被限制为
+一次规划、新诊断或具体高风险审查问题。停滞不会自动提高 reasoning effort。新 run
+写入 `progress-bounded-v2`；
+旧 `cost-aware-v1` Audited run 保留其封存的 v1 profile map，续接校验不会重新解释历史
+dispatch。
 
 ---
 
-## Full Harness 协议
+## Portable 与 Audited 协议
 
-Full 模式用于需要强协同控制的任务。
+Portable v2 是默认持久协议。Audited 控制是扩展，不是每次都必须执行的第二套工作流。
 
-### 1. Mode Selection Gate
+### 1. 物化合同
 
-主代理记录选择 Direct、Lite 或 Full 的原因。Full 模式通常由以下因素触发：独立责任面、长任务或可续跑范围、较高验证风险、evaluator 价值、隔离和回滚价值。
+只有原生 Plan 已经可执行且存在持久化触发条件时，才物化合同：
 
-### 2. Capability Gate
-
-分配任务前，主代理记录当前运行时真实可用的能力：
-
-- 真实子代理或委托机制
-- 文件系统写入权限
-- shell 和 sandbox 限制
-- worktree 支持
-- 浏览器或 UI 验证能力
-- 可承载协议规则的 instruction 文件或 hook
-- 外部服务、凭据和网络假设
-
-如果某项能力不可用，主代理必须选择回退路径，例如顺序执行、缩小范围、请求决策或进入停止状态。
-
-### 3. State Machine
-
-Full 模式使用明确状态推进：
-
-```text
-INTAKE -> GATED -> SPECIFIED -> DISPATCHED -> REPORTED -> EVALUATING -> ACCEPTED -> HANDED_OFF
+```bash
+python3 <skill-dir>/scripts/harnessctl.py materialize . \
+  --title "Checkout refactor" \
+  --goal "完成 checkout 重构且不改变公开行为" \
+  --done-when "focused 与 regression 测试通过" \
+  --constraint "保留无关改动" \
+  --next-action "检查 checkout 状态边界"
 ```
 
-停止状态同样是一等状态：
+命令只在 `.harness/<slug>/` 下创建三个核心文件：
 
-```text
-BLOCKED -> NEEDS_DECISION -> FAILED
+- `contract.json`：唯一可变真相
+- `events.jsonl`：append-only transition 与 evidence 索引
+- `capsule.md`：为接收模型重新生成的有界上下文
+
+### 2. 在已验证边界 Checkpoint
+
+只在有意义的验证结果之后或可能中断之前 checkpoint，不要每次 tool call 后都写入。
+证据留在项目中；合同只保存相对路径、SHA-256 和文件大小。
+
+```bash
+python3 <skill-dir>/scripts/harnessctl.py checkpoint . \
+  --runtime codex --actor-id codex-main --owner-epoch 1 \
+  --completed "Focused regression passes" \
+  --next-action "Run the package verification" \
+  --evidence-file reports/focused-test.txt \
+  --reason "Verified implementation boundary"
 ```
 
-每次状态转换都应留下简短 trace，记录原因、owner、证据路径和下一个状态。
+第一次 checkpoint 会领取 epoch 1，因此省略 `--owner-epoch`。
 
-### 4. Acceptance Registry
+### 3. Handoff 与 Resume
 
-验收标准以结构化记录保存。每条记录应包含：
-
-- 验收标准
-- owner
-- 所需证据
-- 状态：`pending`、`pass`、`fail`、`blocked` 或 `scoped_out`
-- 证据路径或命令结果摘要
-
-只要仍有必需验收项未验证，主代理就不能声明任务完成。
-
-### 5. Budget Circuit Breaker
-
-每个阶段应设置预算边界，包括时间、上下文、工具调用、重试、成本和外部副作用。当阶段超出预算时，主代理记录停止原因，并决定继续、拆分、缩小范围或请求决策。
-
-### 6. Trace
-
-Trace 记录续跑和审计所需的最小证据：
-
-- capability gate 结果
-- 状态转换
-- worker 报告路径
-- evaluator 结果
-- 预算停止或重试原因
-- 最终 acceptance registry
-
-聊天记录不应被视为持久化任务状态。
-
-### 7. 跨运行时续接
-
-替代运行时从项目根开始，不依赖 artifact 路径或旧聊天：
+正常交接使用 `handoff`。替代运行时从项目根开始：
 
 ```bash
 python3 <skill-dir>/scripts/harnessctl.py resume . \
-  --runtime grok --actor-id <unique-session-id> \
-  --takeover-reason "previous Codex session interrupted"
+  --runtime claude --actor-id claude-main
 ```
 
-`resume` 只接受唯一 active Full run；它先恢复未完成事务并验证完整 artifact，再在锁
-内转移 owner，返回 required reads、active tasks、blockers、明确 next action、pending
-verification、owner epoch 和工作树 drift。之后所有写命令都必须携带该 actor ID 和
-epoch，旧 session 会 fail closed。
+`resume` 会校验合同、拒绝同时 active 的 Portable/Full 歧义、检查 workspace drift、转移
+owner、重建 capsule，并返回 `must_read`、`read_if_needed`、blockers、pending
+verification 和一个安全 next action。强制接管 active owner 时还必须提供
+`--takeover-reason`。
 
-每个已验证边界后、可能中断前都应 checkpoint。源运行时可正常退出时使用 `handoff`；
-突然中断时由接管方记录 takeover reason。该协议迁移的是持久化可观察状态，不是隐藏
-思维、provider session 内部状态、secret 或正在进行的外部副作用。Harness 不接收额度
-回调；所谓自动接管，是替代运行时启动后第一步执行 `resume`。
+到达终态时运行 `close --status accepted|failed|cancelled`。`accepted` 要求已有证据且
+没有 unresolved blocker 或 pending verification；关闭后的合同不再参与 active run 选择。
+
+### 4. Portable 数据边界
+
+只持久化可观察事实：目标、`done_when`、约束、已完成里程碑、阻塞、带简短理由的决策、
+changed paths、证据摘要、能力和分级读取路径。不要持久化隐藏 reasoning、完整聊天、
+provider session object、secret 或 in-flight 外部副作用。
+
+### 5. Audited 升级
+
+只增加风险真正需要的控制：
+
+- typed acceptance receipts 与 manager re-verification
+- UI/state/async/concurrency 路径的 Production State Witness
+- 行为变更的受保护 RED/GREEN chronology
+- evaluator separation、更强 rollback 和详细 trace
+- owner 争议或并发 writer 的 epoch fencing
+
+Audited 不等于必须并行。worker 仍是独立的成本与责任边界决策。
+
+### 6. Legacy Full 兼容
+
+`workspace/<slug>/` 下的既有 `handoff-v1` artifact 继续有效。同一组 `checkpoint`、
+`handoff`、`resume` 和 `validate` 命令仍支持它们。不要仅为换格式重写有效旧 artifact。
+
+### 7. 验收边界
+
+worker self-report 和 harness score 都不是完成证据。manager 必须重新运行或检查关键
+验证。对用户可见故障，在 flow 或 visible evidence 可用时，policy-only unit test 不能
+替代它们。
 
 ---
 
@@ -196,11 +215,28 @@ python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime
 
 ```bash
 mkdir -p ~/.codex/skills/agent-reliability-harness
-rsync -a --delete /tmp/agent-reliability-harness-runtime/ ~/.codex/skills/agent-reliability-harness/
+rsync -a --delete --exclude workspace --exclude .harness \
+  /tmp/agent-reliability-harness-runtime/ ~/.codex/skills/agent-reliability-harness/
 python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
 ```
 
 runtime 包只包含 skill 运行时需要的文件。
+
+这套路由策略推荐使用以下 Codex 默认配置：
+
+```toml
+model = "gpt-5.6-sol"
+model_reasoning_effort = "max"
+service_tier = "fast"
+
+[agents]
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
+```
+
+这段配置是可选的，始终由用户自行维护。Skill 安装过程不复制私有 model cache，也不
+设置 `model_catalog_json`。如果 Luna 不可用，应保留 requested route，并单独记录运行时
+实际解析的 fallback；不能声称 Luna worker 已经运行。
 
 ---
 
@@ -229,11 +265,16 @@ runtime 包包含：
 - `agents/openai.yaml`
 - `adapters/`
 - `references/`
+  - `references/portable-contract.md`
+  - `references/harness-protocol.md`
   - `references/state-memory-boundary.md`
   - `references/model-routing.md`
 - `templates/`
+- `scripts/harnessctl.py`
 - `scripts/init_run.py`
 - `scripts/harness_test_run.py`
+- `scripts/protocol_regression_harness.py`
+- `scripts/runtime_profiles.py`
 - `scripts/status.py`
 - `scripts/tdd_gate_check.py`
 - `scripts/validate_report.py`
@@ -250,6 +291,7 @@ runtime 包会排除：
 - `scripts/sync_version.py`
 - `scripts/package_skill.py`
 - `.git`
+- 生成的 `.harness/` artifact
 - 生成的 workspace artifact
 - 本地 memory 文件
 - session 日志
@@ -273,7 +315,7 @@ runtime 包会排除：
 如果需要可以用多智能体，帮我修正这个错别字。
 ```
 
-预期行为：主代理应选择 Direct 模式，因为调度开销没有必要。
+预期行为：保持 Native，不进行调度，因为协调开销没有必要。
 
 需要持久化协同的长任务：
 
@@ -281,17 +323,38 @@ runtime 包会排除：
 重构 checkout，更新 API contract，迁移测试，并验证 UI 流程。请使用子 agent，并让任务可以续跑。
 ```
 
-预期行为：主代理根据风险、可用工具和验证要求选择 Lite 或 Full 模式。
+预期行为：因为任务必须续跑，所以物化 Portable 状态；只有实际风险需要时才增加
+Audited 扩展。是否使用 worker 仍是独立决策。
 
 ---
 
-## Artifact 初始化
+## Portable 物化与 Audited 初始化
 
-Full 模式可以初始化持久化运行目录：
+新的可续跑任务使用 Portable v2：
+
+```bash
+python3 scripts/harnessctl.py materialize /path/to/project \
+  --title "Checkout Refactor" \
+  --goal "重构 checkout 并保留现有行为" \
+  --done-when "Checkout regression suite passes" \
+  --next-action "Inspect the production checkout flow"
+```
+
+只生成：
+
+```text
+/path/to/project/.harness/checkout-refactor/
+├── contract.json
+├── events.jsonl
+└── capsule.md
+```
+
+需要 Audited 控制或 legacy Full 工作流时，初始化完整记录：
 
 ```bash
 python3 scripts/init_run.py \
   --project-root /path/to/project \
+  --mode audited \
   --title "Checkout Refactor" \
   --agents frontend,backend,tests
 ```
@@ -318,7 +381,13 @@ python3 scripts/init_run.py \
 
 ## 报告校验
 
-在使用报告结论前，可以先校验报告结构：
+直接校验 Portable contract：
+
+```bash
+python3 scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
+```
+
+对于 Audited 或 legacy artifact，在使用报告结论前先校验报告结构：
 
 ```bash
 python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
@@ -390,9 +459,11 @@ agent-reliability-harness/
 - [Codex adapter](adapters/codex.md)
 - [Grok adapter](adapters/grok.md)
 - [Claude Code adapter](adapters/claude-code.md)
-- [Harness protocol reference](references/harness-protocol.md)
+- [Portable Contract v2](references/portable-contract.md)
+- [Audited 与 legacy 协议](references/harness-protocol.md)
 
-适配文档不改变协议，只把同一组 gate、artifact、证据规则和回退行为映射到可用的运行时控制能力上。
+适配文档把原生 planning、worker 控制和可选模型 profile 映射到不同运行时，但不能把
+provider-specific 字段加入 Portable contract。
 
 ---
 
@@ -405,15 +476,42 @@ agent-reliability-harness/
 本项目不复制 Superpowers 的 skill 正文，也不要求安装 Superpowers 插件。二者关系如下：
 
 ```text
-agent-reliability-harness = 路由与 harness 权威
+agent-reliability-harness = 持久化与验收权威
 Superpowers-style methods = 可选的工程支持方法
 ```
 
-模式选择始终先执行。只有当支持方法适合当前执行模式时，才会使用这些方法。
+Native / Portable / Audited 选择始终先执行。只有支持方法适合当前模式和实际风险时才使用。
 
 ---
 
 ## 版本历史
+
+### v9.1.0
+
+- 将 Codex 规划和验收统一到 Sol `max`，同时继续把确有必要的执行路由给 Luna `max`。
+- 记录可选的 Codex 父 Agent / 子 Agent 配置，并把私有 model cache 覆盖排除在分发包外。
+- 明确 routed profile 不会替代活跃父线程，并要求分别记录 requested model 与 resolved model。
+
+### v9.0.0
+
+- 新增可观察的进度熔断：连续两轮无进展后停止，重新路由前必须提供新诊断。
+- 将长时间和机械 Codex 执行路由到 Luna `max`；Sol 仅用于有界的诊断、规划和具体验收审查。
+- 将新路由版本化为 `progress-bounded-v2`，同时保留旧 `cost-aware-v1` Audited run
+  的封存校验能力。
+- 从通用 skill 入口移除特效复原专用策略，并减少重复的计划、报告和审查说明。
+
+### v8.0.0
+
+- 用 Plan-native 的 Native、Portable、Audited 模式替换 prompt 层 Direct/Lite/Full router。
+- 新增 Portable Contract v2：三文件核心、有界 resume capsule、分级读取、证据摘要、
+  workspace drift 检查、跨运行时 owner 转移和 terminal close。
+- 保持 `handoff-v1` Full 兼容，将 provider/model map 移出 portable schema，并只在
+  Audited 工作中保留重型证据控制。
+
+### v7.5.0
+
+- 为 Full run 增加 typed evidence hardening、artifact binding、lessons integrity、
+  protected TDD chronology 和对抗式协议回归覆盖。
 
 ### v7.4.0
 

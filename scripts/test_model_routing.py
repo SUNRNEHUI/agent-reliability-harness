@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic tests for cost-aware model routing (Codex + Grok)."""
+"""Deterministic tests for progress-bounded model routing (Codex + Grok)."""
 
 from __future__ import annotations
 
@@ -15,9 +15,10 @@ SCRIPTS = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_schema import (  # noqa: E402
+from runtime_profiles import (  # noqa: E402
     CODEX_MODEL_PROFILES,
     GROK_MODEL_PROFILES,
+    LEGACY_CODEX_MODEL_PROFILES,
     model_profiles_for,
 )
 from model_router import resolve_configuration, select_profile  # noqa: E402
@@ -33,6 +34,8 @@ class _Args:
         self.high_risk = kwargs.get("high_risk", False)
         self.worker_conflict = kwargs.get("worker_conflict", False)
         self.validation_failures = kwargs.get("validation_failures", 0)
+        self.no_progress_cycles = kwargs.get("no_progress_cycles", 0)
+        self.new_diagnosis = kwargs.get("new_diagnosis", False)
 
 
 class ProfileSelectionTests(unittest.TestCase):
@@ -45,11 +48,20 @@ class ProfileSelectionTests(unittest.TestCase):
         profile, _ = select_profile(_Args(simple=True))
         self.assertEqual(profile, "main")
 
-    def test_planner_and_critical(self):
+    def test_bounded_sol_and_stall_gate(self):
         self.assertEqual(select_profile(_Args(fuzzy=True))[0], "planner")
         self.assertEqual(select_profile(_Args(harness_synthesis=True))[0], "planner")
         self.assertEqual(select_profile(_Args(high_risk=True))[0], "critical_reviewer")
-        self.assertEqual(select_profile(_Args(validation_failures=2))[0], "critical_reviewer")
+        with self.assertRaisesRegex(ValueError, "new diagnosis"):
+            select_profile(_Args(validation_failures=2))
+        with self.assertRaisesRegex(ValueError, "new diagnosis"):
+            select_profile(_Args(no_progress_cycles=2))
+        profile, reasons = select_profile(_Args(validation_failures=2, new_diagnosis=True))
+        self.assertEqual(profile, "planner")
+        self.assertEqual(reasons, ["fresh_diagnosis_after_stall"])
+        profile, reasons = select_profile(_Args(no_progress_cycles=2, new_diagnosis=True))
+        self.assertEqual(profile, "planner")
+        self.assertEqual(reasons, ["fresh_diagnosis_after_stall"])
 
 
 class RuntimeMapTests(unittest.TestCase):
@@ -60,9 +72,15 @@ class RuntimeMapTests(unittest.TestCase):
         self.assertEqual(GROK_MODEL_PROFILES["fast"]["reasoning_effort"], "low")
         self.assertEqual(GROK_MODEL_PROFILES["critical_reviewer"]["reasoning_effort"], "xhigh")
 
-    def test_codex_map_unchanged(self):
+    def test_codex_execution_and_sol_burst_map(self):
         self.assertEqual(CODEX_MODEL_PROFILES["fast"]["model"], "gpt-5.6-luna")
+        self.assertEqual(CODEX_MODEL_PROFILES["fast"]["reasoning_effort"], "max")
+        self.assertEqual(CODEX_MODEL_PROFILES["main"]["model"], "gpt-5.6-luna")
+        self.assertEqual(CODEX_MODEL_PROFILES["main"]["reasoning_effort"], "max")
         self.assertEqual(CODEX_MODEL_PROFILES["planner"]["model"], "gpt-5.6-sol")
+        self.assertEqual(CODEX_MODEL_PROFILES["planner"]["reasoning_effort"], "max")
+        self.assertEqual(CODEX_MODEL_PROFILES["critical_reviewer"]["model"], "gpt-5.6-sol")
+        self.assertEqual(CODEX_MODEL_PROFILES["critical_reviewer"]["reasoning_effort"], "max")
 
     def test_model_profiles_for(self):
         self.assertIsNone(model_profiles_for("claude"))
@@ -70,6 +88,12 @@ class RuntimeMapTests(unittest.TestCase):
         assert grok is not None
         grok["fast"]["model"] = "mutated"
         self.assertEqual(GROK_MODEL_PROFILES["fast"]["model"], "grok-api")
+
+        legacy = model_profiles_for("codex", "cost-aware-v1")
+        self.assertEqual(legacy, LEGACY_CODEX_MODEL_PROFILES)
+        assert legacy is not None
+        legacy["fast"]["reasoning_effort"] = "mutated"
+        self.assertEqual(LEGACY_CODEX_MODEL_PROFILES["fast"]["reasoning_effort"], "medium")
 
     def test_resolve_configuration_runtime(self):
         cfg, overrides = resolve_configuration("grok", "fast")
@@ -100,8 +124,53 @@ class CliRouterTests(unittest.TestCase):
 
     def test_cli_codex_default(self):
         payload = self._run("--runtime", "codex")
+        self.assertEqual(payload["policy"], "progress-bounded-v2")
         self.assertEqual(payload["profile"], "main")
         self.assertEqual(payload["model"], "gpt-5.6-luna")
+        self.assertEqual(payload["reasoning_effort"], "max")
+
+    def test_cli_rejects_stalled_retry_without_new_diagnosis(self):
+        blocked = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "model_router.py"),
+                "--runtime",
+                "codex",
+                "--validation-failures",
+                "2",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("new diagnosis", (blocked.stdout + blocked.stderr).casefold())
+
+        payload = self._run(
+            "--runtime",
+            "codex",
+            "--validation-failures",
+            "2",
+            "--new-diagnosis",
+        )
+        self.assertEqual(payload["profile"], "planner")
+        self.assertEqual(payload["reason_codes"], ["fresh_diagnosis_after_stall"])
+
+        blocked = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "model_router.py"),
+                "--runtime",
+                "codex",
+                "--no-progress-cycles",
+                "2",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("new diagnosis", (blocked.stdout + blocked.stderr).casefold())
 
     def test_cli_env_override(self):
         env = os.environ.copy()
@@ -132,7 +201,7 @@ class DispatchValidationTests(unittest.TestCase):
         return {
             "version": 1,
             "evidence_policy": "typed-v1",
-            "routing_policy": "cost-aware-v1",
+            "routing_policy": "progress-bounded-v2",
             "created_at": "2026-07-17T00:00:00Z",
             "updated_at": "2026-07-17T00:00:00Z",
             "title": "routing-test",
@@ -313,6 +382,20 @@ class DispatchValidationTests(unittest.TestCase):
                 runtime="codex",
                 profile="fast",
                 requested_model="gpt-5.6-luna",
+                reasoning_effort="max",
+            )
+        ]
+        errors = self._validate(state)
+        self.assertEqual(errors, [], errors)
+
+    def test_legacy_codex_profile_remains_valid(self):
+        state = self._base_state()
+        state["routing_policy"] = "cost-aware-v1"
+        state["state_layers"]["session_state"]["delegation_state"] = [
+            self._dispatch(
+                runtime="codex",
+                profile="fast",
+                requested_model="gpt-5.6-luna",
                 reasoning_effort="medium",
             )
         ]
@@ -347,7 +430,7 @@ def write_matrix(path: Path) -> None:
         ["--runtime", "grok", "--fuzzy"],
         ["--runtime", "grok", "--harness-synthesis"],
         ["--runtime", "grok", "--high-risk"],
-        ["--runtime", "grok", "--validation-failures", "2"],
+        ["--runtime", "grok", "--validation-failures", "2", "--new-diagnosis"],
         ["--runtime", "codex", "--simple", "--mechanically-verifiable"],
         ["--runtime", "codex"],
     ]
@@ -372,7 +455,7 @@ def main() -> int:
         return 0
     if "--expect-missing-grok" in sys.argv:
         # Historical RED helper: fail if Grok map missing (used only before implementation).
-        if "GROK_MODEL_PROFILES" in (SCRIPTS / "harness_schema.py").read_text(encoding="utf-8"):
+        if "GROK_MODEL_PROFILES" in (SCRIPTS / "runtime_profiles.py").read_text(encoding="utf-8"):
             print("GROK map present; RED expectation not met (implementation already landed)")
             return 1
         print("GROK map missing as expected for RED")

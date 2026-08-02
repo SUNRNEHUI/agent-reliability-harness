@@ -1,12 +1,16 @@
 # Harness Protocol Reference
 
-This reference defines the v7.4 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, continuation ownership, evidence, budget, and final acceptance.
+This reference defines Audited controls and legacy `handoff-v1` Full compatibility. New
+cross-session or cross-model work should start with Portable Contract v2; load this file
+only when typed receipts, protected TDD chronology, a Production State Witness, evaluator
+separation, or legacy artifact recovery is required.
 
 ## Protocol Goal
 
-The harness turns multi-agent orchestration from advice into a required control loop:
+After Native / Portable / Audited selection chooses Audited or opens a legacy Full run,
+the harness turns coordination from advice into a required control loop:
 
-1. choose Direct, Lite, or Full mode
+1. confirm the Audited trigger or legacy `handoff-v1` artifact
 2. when the goal is fuzzy or false-completion risk is high, run Spec Synthesis before implementation dispatch
 3. discover actual runtime capabilities
 4. create a bounded spec and acceptance registry with pass algorithms
@@ -17,46 +21,27 @@ The harness turns multi-agent orchestration from advice into a required control 
 
 Spec Synthesis details: `references/spec-synthesis.md`. Harness instance quality can be scored with `scripts/score_harness.py` (harness quality ≠ product success).
 
-## Mode Selection Gate
+## Audited Entry Gate
 
-Explicit multi-agent wording authorizes the manager to evaluate the mode. It does not require dispatch.
+Load this protocol only after the core router selected Audited, or when opening an existing
+legacy Full artifact. Audited is justified by controls such as typed acceptance receipts,
+a Production State Witness, protected TDD chronology, evaluator separation, disputed
+ownership, stronger rollback, or release/production risk.
 
-The manager should skip multi-agent orchestration when the task is small, localized, lacks clean ownership boundaries, or would cost more to coordinate than to complete directly. In that case, the manager should say so briefly, execute as a single agent, and verify normally without creating run artifacts.
+Multi-agent wording, task size, or a long native Plan does not independently trigger this
+protocol. Parallelism remains an execution choice. Cross-session durability without an
+audit trigger belongs in Portable v2.
 
-The manager should proceed with Lite Orchestration or Full Harness when delegation materially helps because the work is parallelizable, long, resumable, risky, evaluator-sensitive, or benefits from isolated ownership and rollback.
+## Legacy Full Mapping
 
-Other planning, TDD, worktree, review, verification, or parallel-agent methods are supporting methods after this gate. They do not replace mode selection.
-
-## Operating Modes
-
-Choose the thinnest mode that still protects the work.
-
-### Direct Mode
-
-Use Direct mode for small edits, narrow fixes, simple questions, direct commands, and ordinary single-agent work. The manager does the work directly, verifies normally, and does not create harness artifacts, worker reports, trace files, or registries.
-
-### Lite Orchestration
-
-Use Lite Orchestration for medium tasks where decomposition helps but the cost of a full harness would dominate the work. Lite mode may use a short plan, bounded worker or stage reports, and only the acceptance evidence needed for the task. It should not create the full artifact set by default.
-
-Lite mode is appropriate when:
-
-- the task has two or more bounded surfaces, but is not long-running or high-risk
-- the user asked for coordination, but resumability is not important
-- a worker-style split helps review without needing durable machine-readable state
-- verification can be captured in a small command summary, diff review, screenshot, or report
-
-Lite mode may borrow test-first evidence, strict TDD, compact review, or parallel-agent discipline when useful, but it should not expand into full ceremony without a Full Harness trigger.
-
-### Full Harness
-
-Use Full Harness only when the work is long, risky, resumable, multi-stage, evaluator-sensitive, likely to need rollback, or explicitly requires durable coordination across agents or sessions.
-
-Full Harness is the only mode that requires the complete record set below. If a task does not need resumable state, acceptance registry blocking, budget breakers, and trace continuity, prefer Direct or Lite mode.
+Existing Full artifacts keep their original `mode: full`, state machine, acceptance
+registry, and trace semantics. Historical Direct and Lite paths did not require this record
+set and should not be initialized for new work. In v8 terminology, this complete record set
+is the Audited compatibility format.
 
 ## Required Records
 
-Required records are mandatory only for Full Harness runs. Direct mode creates none. Lite Orchestration may keep only a short plan, worker report, and necessary acceptance evidence.
+Required records are mandatory only for Audited or legacy Full runs.
 
 A Full Harness run should preserve these records in durable files when the task is complex or resumable.
 
@@ -149,7 +134,7 @@ row is a review FAIL and requires a new TDD cycle; it cannot be waived by a pass
 For every implementation task, record the selected gate mode:
 
 - `strict_tdd`: required when the user, project instructions, phase gate, or task assignment explicitly requires TDD. Requires RED command/result/failure reason before production code, GREEN command/result after implementation, and a refactor check after cleanup.
-- `test_first_evidence`: default for Lite or Full code behavior changes when meaningful tests exist or can be added at reasonable cost. Requires failing or gap-revealing evidence before implementation and passing verification after.
+- `test_first_evidence`: default for Audited or legacy Full code behavior changes when meaningful tests exist or can be added at reasonable cost. Requires failing or gap-revealing evidence before implementation and passing verification after.
 - `substitute`: allowed only when meaningful test-first evidence is unavailable or disproportionate. Requires no-test reason and substitute check.
 - `not_applicable`: allowed only for docs-only, config-only, analysis-only, or non-behavior work.
 

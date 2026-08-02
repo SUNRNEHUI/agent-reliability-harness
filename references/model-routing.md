@@ -1,28 +1,64 @@
-# Cost-Aware Model Routing
+# Progress-Bounded Model Routing
 
-This reference applies model choice **after** the density decision. A tiny task remains
-Direct; starting a cheaper worker for a one-line edit can cost more than finishing it in
-the current main thread.
+Apply model choice **after** selecting Native, Portable, or Audited mode. Mode decides
+durability and control depth; model routing is an optional runtime-local execution choice.
+A Native one-line edit stays in the current thread because dispatch can cost more than the
+work.
 
 ## Codex Default Policy
 
-This repository intentionally does not route through Terra. The configured GPT-5.6
-profiles are:
+New runs use routing policy `progress-bounded-v2`. This repository intentionally does not
+route through Terra. The configured GPT-5.6 profiles are:
 
 | Profile | Model | Reasoning | Use |
 |---|---|---|---|
-| `fast` | `gpt-5.6-luna` | `medium` | Simple, mechanically verifiable work; repeated read-only batches |
-| `main` | `gpt-5.6-luna` | `xhigh` | High-frequency manager, implementation, integration |
-| `planner` | `gpt-5.6-sol` | `high` | Fuzzy intent, architecture, Spec Synthesis, harness design |
-| `critical_reviewer` | `gpt-5.6-sol` | `xhigh` | High risk, repeated validation failure, worker conflict |
+| `fast` | `gpt-5.6-luna` | `max` | Mechanically verifiable execution and repeated bounded batches |
+| `main` | `gpt-5.6-luna` | `max` | Long-running implementation and integration execution |
+| `planner` | `gpt-5.6-sol` | `max` | One bounded planning or fresh-diagnosis question |
+| `critical_reviewer` | `gpt-5.6-sol` | `max` | One concrete high-risk acceptance review or worker-conflict decision |
 
 Run the deterministic selector when the route is not obvious:
 
 ```bash
 python3 <skill-dir>/scripts/model_router.py --runtime codex --simple --mechanically-verifiable
 python3 <skill-dir>/scripts/model_router.py --runtime codex --harness-synthesis
-python3 <skill-dir>/scripts/model_router.py --runtime codex --validation-failures 2
+python3 <skill-dir>/scripts/model_router.py --runtime codex
 ```
+
+Luna `max` is the configured policy for long implementation and mechanical execution. It is
+an explicit workload choice, not a general claim that maximum reasoning is always optimal.
+Measure success, time to first action, no-progress cycles, latency, and token use against a
+lower-effort baseline.
+
+The Codex parent thread may remain on Sol `max` as the planner and acceptance owner. The
+`main` profile names a routed execution lane; it does not replace the parent session default.
+
+Existing Audited runs that record `cost-aware-v1` remain resumable and are checked against
+the v1 profile map sealed when they were created. New routes never emit that legacy policy;
+changing an old run to v2 requires an explicit migration rather than silently reinterpreting
+its dispatch history.
+
+## Bounded Sol Bursts
+
+Sol must receive one question, one output contract, and one stop condition. Use it to settle
+an ambiguity or review a concrete candidate, not to run an open-ended implementation loop.
+Do not ask it to explore exhaustively, keep thinking, or improve a plan after a reversible
+falsifying action is available.
+
+A stalled path is not a reason to increase effort. Two validation failures or two
+no-progress cycles block routing until the manager records a new diagnosis:
+
+```bash
+python3 <skill-dir>/scripts/model_router.py --runtime codex --no-progress-cycles 2
+# ERROR: stalled execution requires a new diagnosis before routing
+
+python3 <skill-dir>/scripts/model_router.py --runtime codex \
+  --no-progress-cycles 2 --new-diagnosis
+```
+
+The second command selects `planner` / Sol `max` for exactly one fresh diagnosis. Pass
+only facts, assumptions, the invalidated hypothesis, new evidence, and the cheapest next
+falsifying experiment. Do not pass the full transcript.
 
 ## Grok Policy
 
@@ -52,27 +88,30 @@ when the install only has 4.5.
 
 Apply these in order:
 
-1. High risk, worker conflict, or two validation failures → `critical_reviewer`.
-2. Fuzzy goal or harness/spec synthesis → `planner`.
-3. Simple **and** mechanically verifiable → `fast`.
-4. Everything else → `main`.
+1. Two validation failures or two no-progress cycles without a new diagnosis → stop routing.
+2. A recorded fresh diagnosis after a stall → `planner` for one bounded Sol call.
+3. High risk or worker conflict with a concrete decision surface → `critical_reviewer`.
+4. Fuzzy goal or harness/spec synthesis → `planner` for one bounded output.
+5. Simple **and** mechanically verifiable → `fast`.
+6. Everything else → `main`.
 
-Do not treat higher reasoning effort as a substitute for model capability. On Codex, Luna
-xhigh is the normal execution manager; Sol owns open-ended judgment and critical review.
+Do not treat higher reasoning effort as a recovery mechanism. On Codex, Luna `max` owns the
+configured long-running and mechanical execution paths. Sol owns bounded judgment and
+review only; a completed Sol burst returns control to Luna or the active Native thread.
 On Grok with only 4.5 available, keep **all** workers on `grok-api` and use profile effort
 (and scope) to differentiate work.
 
 ## Dispatch And Audit
 
-Model routing does not authorize delegation. First choose Direct / Direct+ / Lite / Full.
-When a real worker is justified, persist the route:
+Model routing does not authorize delegation. First choose Native, Portable, or Audited.
+When an Audited run justifies a real worker, persist the route:
 
 ```bash
 python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> \
   --worker-id <runtime-id> --task-id 1.1 \
   --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md \
   --runtime codex --profile fast \
-  --requested-model gpt-5.6-luna --reasoning-effort medium \
+  --requested-model gpt-5.6-luna --reasoning-effort max \
   --route-reason "simple mechanically verifiable batch"
 ```
 
@@ -90,9 +129,15 @@ python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> \
 Record the resolved model separately when the runtime exposes it. A requested model is
 not proof that the runtime honored the request.
 
+Before routing reviewers, require a concrete candidate and a blocking acceptance question.
+Use at most one critical reviewer per surface at a time. Keep an implementation or runtime
+verification lane active. Prefer the active runtime's native worker capability map over
+creating a user-visible task solely to obtain a model unavailable to ephemeral subagents.
+
 ## Cross-Runtime Rule
 
-The profile names are portable; the model mapping is not. Sealed maps today:
+The profile names are portable; the model mapping is not. Runtime-local maps live in
+`scripts/runtime_profiles.py`:
 
 - `codex` → `CODEX_MODEL_PROFILES`
 - `grok` → `GROK_MODEL_PROFILES`

@@ -18,7 +18,7 @@ from harness_schema import (
     DISPATCH_STATUSES,
     EVIDENCE_POLICY,
     MODES,
-    MODEL_ROUTING_POLICY,
+    MODEL_ROUTING_POLICIES,
     QUALIFYING_EVIDENCE_TYPES,
     RUN_STATUSES,
     SCHEMA_VERSION,
@@ -26,8 +26,8 @@ from harness_schema import (
     TASK_STATUSES,
     VERIFICATION_TIERS,
     VERIFICATION_GATE_MODES,
-    model_profiles_for,
 )
+from runtime_profiles import model_profiles_for
 from state_witness_check import validate as validate_state_witness
 
 
@@ -853,6 +853,9 @@ def validate_acceptance_registry(path: Path) -> list[str]:
                 errors.append(f"{prefix}.evidence must not be empty for status 'scoped_out'")
         if "required_evidence" in item and not isinstance(item["required_evidence"], list):
             errors.append(f"{prefix}.required_evidence must be a list")
+        linked_tasks = item.get("linked_tasks")
+        if linked_tasks is not None and not isinstance(linked_tasks, list):
+            errors.append(f"{prefix}.linked_tasks must be a list")
         if item.get("required_verification_tier") not in VERIFICATION_TIERS:
             errors.append(
                 f"{prefix}.required_verification_tier must be one of {', '.join(VERIFICATION_TIERS)}"
@@ -869,6 +872,12 @@ def validate_acceptance_registry(path: Path) -> list[str]:
                     active=item.get("status") == "pass",
                 )
             )
+            gate_mode = item["verification_gate"].get("mode") if isinstance(item["verification_gate"], dict) else ""
+            if item.get("status") == "pass" and gate_mode in {"strict_tdd", "test_first_evidence"}:
+                if not isinstance(linked_tasks, list) or not any(str(task_id).strip() for task_id in linked_tasks):
+                    errors.append(
+                        f"{prefix}.linked_tasks must bind a protected {gate_mode} criterion to at least one task"
+                    )
     return errors
 
 
@@ -887,7 +896,7 @@ def validate_run_state(path: Path) -> list[str]:
     if evidence_policy not in {None, EVIDENCE_POLICY}:
         errors.append(f"{path.name}: unsupported evidence_policy {evidence_policy!r}")
     routing_policy = data.get("routing_policy")
-    if routing_policy not in {None, MODEL_ROUTING_POLICY}:
+    if routing_policy not in (None, *MODEL_ROUTING_POLICIES):
         errors.append(f"{path.name}: unsupported routing_policy {routing_policy!r}")
     mode = data.get("mode", "full")
     if not isinstance(mode, str):
@@ -1008,7 +1017,7 @@ def validate_run_state(path: Path) -> list[str]:
             ):
                 if key not in item:
                     errors.append(f"{prefix} missing {key}")
-            if routing_policy == MODEL_ROUTING_POLICY:
+            if routing_policy in MODEL_ROUTING_POLICIES:
                 for key in (
                     "runtime", "profile", "requested_model", "resolved_model",
                     "reasoning_effort", "route_reason", "escalation_count",
@@ -1034,7 +1043,7 @@ def validate_run_state(path: Path) -> list[str]:
                 not isinstance(escalation_count, int) or isinstance(escalation_count, bool) or escalation_count < 0
             ):
                 errors.append(f"{prefix}.escalation_count must be a non-negative integer")
-            if routing_policy == MODEL_ROUTING_POLICY:
+            if routing_policy in MODEL_ROUTING_POLICIES:
                 runtime = str(item.get("runtime") or "").strip()
                 if not runtime:
                     errors.append(f"{prefix}.runtime must not be empty")
@@ -1042,7 +1051,7 @@ def validate_run_state(path: Path) -> list[str]:
                     errors.append(f"{prefix}.runtime must be lowercase")
                 if not str(item.get("route_reason") or "").strip():
                     errors.append(f"{prefix}.route_reason must not be empty")
-                sealed_profiles = model_profiles_for(runtime)
+                sealed_profiles = model_profiles_for(runtime, routing_policy)
                 if sealed_profiles is not None and isinstance(profile, str) and profile in sealed_profiles:
                     configured = sealed_profiles[profile]
                     runtime_label = runtime.casefold()

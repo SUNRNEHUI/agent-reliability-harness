@@ -169,6 +169,18 @@ CHECKS = [
         "patterns": [r"."],
         "desc": "scoring scripts present",
     },
+    {
+        "id": "behavioral_regression_harness",
+        "weight": 10,
+        "paths": ["scripts/protocol_regression_harness.py", "SKILL.md", "references/eval_cases.md"],
+        "patterns": [
+            r"protocol_regression",
+            r"gate.downgrade|conflicting gate",
+            r"RED/GAP|gap.*precede",
+            r"wrapper provenance|require-wrapper",
+        ],
+        "desc": "dynamic adversarial harness covers chronology, downgrade, and provenance boundaries",
+    },
 ]
 
 

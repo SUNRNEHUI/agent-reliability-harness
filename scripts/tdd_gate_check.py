@@ -81,6 +81,65 @@ def gate_mode_of(event: TraceEvent) -> str:
     return normalize_key(first_text(event.data, "gate_mode", "mode"))
 
 
+def gate_decision_errors(events: list[TraceEvent]) -> list[str]:
+    """Reject late or conflicting gate decisions instead of trusting the last line."""
+    decisions = [event for event in events if event.name == "gate_decision"]
+    if not decisions:
+        return ["missing gate_decision event"]
+
+    modes = {gate_mode_of(event) for event in decisions}
+    if len(modes) > 1:
+        return ["conflicting gate_decision modes cannot downgrade or replace the selected gate"]
+
+    first_decision = decisions[0].index
+    first_evidence = next(
+        (
+            event.index
+            for event in events
+            if event.name in {"test_run", "file_modified", "substitute_check", "verification_complete"}
+        ),
+        None,
+    )
+    if first_evidence is not None and first_decision > first_evidence:
+        return ["gate_decision must be recorded before verification or file modification evidence"]
+    return []
+
+
+def wrapper_provenance_errors(events: list[TraceEvent], gate_mode: str) -> list[str]:
+    """Require runtime wrapper markers for protected chronology-sensitive checks."""
+    phases = {"RED", "GREEN"}
+    if gate_mode == "strict_tdd":
+        phases.add("REFACTOR")
+    errors: list[str] = []
+    for phase in phases:
+        matching = [
+            event
+            for event in events
+            if event.name == "test_run" and phase_of(event) == normalize_key(phase)
+        ]
+        if not matching:
+            continue
+        if not any(first_text(event.data, "source") == "harness_test_run" for event in matching):
+            errors.append(f"{phase} evidence requires harness_test_run wrapper provenance")
+    if gate_mode == "test_first_evidence":
+        gap_events = [event for event in events if is_gap_evidence_event(event)]
+        if gap_events and not any(
+            first_text(event.data, "source") == "harness_test_run" for event in gap_events
+        ):
+            errors.append("GAP evidence requires harness_test_run wrapper provenance")
+    return errors
+
+
+def red_failure_context_errors(events: list[TraceEvent]) -> list[str]:
+    errors: list[str] = []
+    for event in events:
+        if event.name != "test_run" or phase_of(event) != "red" or result_of(event) != "FAIL":
+            continue
+        if not first_text(event.data, "failure_reason", "red_failure_reason", "stderr_tail", "stdout_tail", "summary"):
+            errors.append(f"RED test_run at line {event.line_no} must record a failure reason or command output")
+    return errors
+
+
 def load_events(path: Path) -> tuple[list[TraceEvent], list[str]]:
     errors: list[str] = []
     events: list[TraceEvent] = []
@@ -208,13 +267,28 @@ def has_verification_pass(events: list[TraceEvent], after_index: int | None = No
     return False
 
 
-def has_gap_evidence(events: list[TraceEvent]) -> bool:
+def is_gap_evidence_event(event: TraceEvent) -> bool:
+    if first_text(event.data, "gap_evidence", "gap"):
+        return True
+    return any(
+        normalize_key(event.data.get(key)) == "gap"
+        for key in ("evidence_type", "kind", "category", "phase")
+    )
+
+
+def has_gap_evidence(
+    events: list[TraceEvent],
+    *,
+    before_index: int | None = None,
+    after_index: int | None = None,
+) -> bool:
     for event in events:
-        if first_text(event.data, "gap_evidence", "gap"):
+        if before_index is not None and event.index >= before_index:
+            continue
+        if after_index is not None and event.index <= after_index:
+            continue
+        if is_gap_evidence_event(event):
             return True
-        for key in ("evidence_type", "kind", "category", "phase"):
-            if normalize_key(event.data.get(key)) == "gap":
-                return True
     return False
 
 
@@ -288,6 +362,17 @@ def validate_test_first_evidence(events: list[TraceEvent]) -> list[str]:
         errors.append("test_first_evidence requires a RED test_run FAIL or GAP evidence")
     if not matching_test_runs(events, phase="GREEN", result="PASS"):
         errors.append("test_first_evidence requires a GREEN test_run PASS")
+    first_modified = first_event(events, "file_modified")
+    if first_modified is not None:
+        if not matching_test_runs(
+            events,
+            phase="RED",
+            result="FAIL",
+            before_index=first_modified.index,
+        ) and not has_gap_evidence(events, before_index=first_modified.index):
+            errors.append("test_first_evidence requires RED or GAP evidence before the first file modification")
+        if not matching_test_runs(events, phase="GREEN", result="PASS", after_index=first_modified.index):
+            errors.append("test_first_evidence requires GREEN evidence after the first file modification")
     return errors
 
 
@@ -306,10 +391,27 @@ def validate_not_applicable(gate: TraceEvent) -> list[str]:
     return []
 
 
-def validate_trace(path: Path, *, source_paths: list[Path], tolerance_seconds: float) -> list[str]:
+def validate_trace(
+    path: Path,
+    *,
+    source_paths: list[Path],
+    tolerance_seconds: float,
+    require_wrapper: bool = False,
+    task_id: str = "",
+) -> list[str]:
     events, errors = load_events(path)
     if errors:
         return errors
+
+    if task_id.strip():
+        task_key = task_id.strip()
+        events = [event for event in events if normalize_text(event.data.get("task_id")) == task_key]
+        if not events:
+            return [f"no trace evidence found for task_id {task_key!r}"]
+
+    gate_errors = gate_decision_errors(events)
+    if gate_errors:
+        return gate_errors
 
     gate = latest_gate_decision(events)
     if gate is None:
@@ -319,6 +421,12 @@ def validate_trace(path: Path, *, source_paths: list[Path], tolerance_seconds: f
     if gate_mode not in VALID_GATE_MODES:
         choices = ", ".join(sorted(VALID_GATE_MODES))
         return [f"gate_decision gate_mode must be one of {choices}; got {gate_mode!r}"]
+
+    errors = red_failure_context_errors(events)
+    if require_wrapper and gate_mode in {"strict_tdd", "test_first_evidence"}:
+        errors.extend(wrapper_provenance_errors(events, gate_mode))
+    if errors:
+        return errors
 
     if gate_mode == "strict_tdd":
         return validate_strict_tdd(events, source_paths=source_paths, tolerance_seconds=tolerance_seconds)
@@ -377,6 +485,16 @@ def main() -> int:
         default=1.0,
         help="Clock/filesystem tolerance for source mtime comparisons.",
     )
+    parser.add_argument(
+        "--require-wrapper",
+        action="store_true",
+        help="Require harness_test_run provenance for protected TDD evidence.",
+    )
+    parser.add_argument(
+        "--task-id",
+        default="",
+        help="Validate only events belonging to this task_id; prevents cross-task evidence splicing.",
+    )
     parser.add_argument("paths", nargs="+", help="tdd_trace.jsonl files or directories containing them.")
     args = parser.parse_args()
     source_paths = [Path(raw).expanduser() for raw in args.source_path]
@@ -393,6 +511,8 @@ def main() -> int:
             path,
             source_paths=source_paths,
             tolerance_seconds=args.mtime_tolerance_seconds,
+            require_wrapper=args.require_wrapper,
+            task_id=args.task_id,
         )
         print_result(path, errors)
         failed = failed or bool(errors)

@@ -2,22 +2,29 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Agent Reliability Harness, formerly Agent Dispatch Harness and Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
+Agent Reliability Harness is a Plan-native skill for reliable execution across Codex,
+Claude Code, Grok, and other file-and-shell capable agents. It uses the runtime's own Plan
+for ordinary work, materializes a compact provider-neutral contract only when work must
+survive a boundary, and adds audit controls only when risk requires them.
 
-Current version: **v7.4.0** · 2026-07-18
+Current version: **v9.1.0** · 2026-08-02
 
 ---
 
 ## Overview
 
-Multi-agent execution is useful only when the work has clear independent ownership boundaries or requires durable coordination. This skill separates authorization from execution: a user may request multi-agent work, but the manager agent still decides whether delegation improves the result.
+Modern agents already plan, track tasks, use tools, and manage workers. Repeating those
+capabilities in a second prompt-level state machine wastes context and creates competing
+sources of truth. This skill adds only what a runtime cannot reliably carry across a
+session or model boundary.
 
 The manager remains responsible for:
 
-- selecting the execution mode
-- defining scope, non-goals, ownership, and verification requirements
-- assigning bounded work to sub-agents when delegation is justified
-- merging results and resolving conflicts
+- selecting Native, Portable, or Audited mode
+- defining the outcome, constraints, approval boundaries, and observable `done_when`
+- materializing only facts that are expensive or unsafe to reconstruct
+- assigning bounded work only when ownership is disjoint
+- stopping reasoning loops that produce no observable progress
 - verifying acceptance evidence before claiming completion
 
 Sub-agents are used only for bounded execution, investigation, review, or evaluation tasks. They do not replace the manager's responsibility for final acceptance.
@@ -26,153 +33,175 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 
 ## Core Capabilities
 
-- **Mode selection:** choose Direct, Lite, or Full execution before creating workers or artifacts.
-- **Cross-runtime model routing:** keep portable profiles while sealing separate Codex and Grok model maps and truthful fallbacks.
-- **Selective delegation:** dispatch sub-agents only when the task has clean ownership boundaries.
-- **Durable state:** preserve task state for long or resumable work under a project workspace directory.
-- **Automatic continuation:** let a replacement Codex or Grok session discover, recover, validate, and atomically claim the unique active Full run from the project root.
-- **Runtime TDD evidence:** distinguish strict TDD, test-first evidence, substitute verification, and non-applicable work with wrapper-generated trace and optional filesystem mtime checks.
-- **Evidence-based acceptance:** require tests, build output, logs, browser checks, screenshots, CI, readback, or evaluator reports before completion.
-- **Runtime adapters:** map the same protocol to Codex, Claude Code, or similar coding-agent environments.
-- **Clean packaging:** generate a runtime-only install package without repository docs, local caches, generated workspaces, or private configuration.
+- **Plan-native routing:** reuse the runtime Plan instead of generating a second checklist.
+- **Portable Contract v2:** preserve only objective, decisions, milestones, blockers, next
+  action, workspace fingerprint, evidence digests, capabilities, and tiered reads.
+- **Bounded resume context:** regenerate `capsule.md` under a deterministic character budget.
+- **Fail-closed continuation:** detect corruption, drift, stale ownership, multiple active
+  runs, and Portable/legacy ambiguity before mutation.
+- **Audited extensions:** retain typed receipts, Production State Witness, protected TDD
+  chronology, evaluator separation, and stronger fencing for high-risk work.
+- **Legacy compatibility:** continue to validate and resume `handoff-v1` Full artifacts.
+- **Adapter-local routing:** keep provider and model slugs outside the portable core.
+- **Progress Circuit Breaker:** require new evidence, an artifact change, a test result, or a
+  binding decision; stop after two no-progress cycles without a new diagnosis.
+- **Clean packaging:** exclude repository docs, generated `.harness/` and `workspace/`
+  artifacts, caches, sessions, and private configuration.
 
 ---
 
 ## Execution Modes
 
-| Mode | Use When | Behavior |
+| Mode | Use When | Durable State |
 | --- | --- | --- |
-| **Direct** | The task is small, local, sequential, or cheaper for one agent to complete. | No sub-agents and no orchestration artifacts. The manager executes and verifies directly. |
-| **Lite** | The task has a few separable slices, but does not need a durable harness. | The manager uses a short plan, bounded ownership, compact reports, and targeted verification. |
-| **Full** | The task is long, risky, resumable, parallel, evaluator-heavy, or benefits from worktree isolation. | The manager runs the full harness with capability records, state files, acceptance registry, trace, reports, and verification gates. |
+| **Native** | The active session can finish and verify without costly reconstruction. | None; use the runtime Plan and task tracking. |
+| **Portable** | Work may cross sessions/models, wait externally, or use workers whose results must survive context loss. | `.harness/<slug>/contract.json`, `events.jsonl`, `capsule.md` |
+| **Audited** | Production, release, permissions, security, destructive changes, disputed ownership, or high fake-success risk needs stronger proof. | Portable state plus justified evidence and review extensions; legacy Full remains supported. |
 
-Explicit multi-agent wording authorizes mode selection. It does not automatically require multiple workers.
-The shortcut phrases activate the density router; they do not force Full or multi-agent dispatch.
+Parallelism is independent of mode. A large sequential task can remain Native; a small
+handoff can be Portable; a high-risk one-file change can be Audited.
 
 ---
 
 ## When To Use
 
-Use this skill when the user explicitly asks for:
+Use this skill when the request involves:
 
 - saying "You are the main agent" or "write a harness" to activate the density router
 - writing a harness to solve this problem
-- multi-agent work
-- sub-agents
-- delegated agent work
-- parallel agents
-- DAG scheduling
-- worktree-based parallel execution
+- durable handoff or cross-model continuation
+- resumable execution or a long external wait
+- multi-agent, sub-agent, parallel, DAG, or worktree coordination
 - 分头处理 / 分别派 / 拆给不同 agent
-- resumable or evidence-verified long-running coordination
+- evidence-based acceptance or a high fake-success risk
 
-Do not use this skill only because a task is large. If the user has not authorized multi-agent execution, continue with the normal single-agent workflow or briefly propose multi-agent coordination when it would materially reduce risk.
+The trigger selects the skill, not the heaviest mode. Ordinary work should still remain
+Native, and workers should be used only when parallel ownership is real.
 
 ---
 
 ## Operating Flow
 
 ```text
-Context Intake
--> Mode Selection: Direct / Lite / Full
--> Execute Selected Mode
-   Direct: implement, verify, report
-   Lite: coordinate bounded slices, verify, report
-   Full: run capability gate, acceptance registry, state machine, trace, evaluator
--> Merge / Handoff
+Native Plan
+-> define outcome / constraints / done_when / approval boundary
+-> choose Native / Portable / Audited
+-> execute, optionally with bounded workers
+-> stop or re-diagnose after two no-progress cycles
+-> verify against observable evidence
+-> checkpoint or hand off only at a durable boundary
 ```
 
-The manager should always choose the lightest mode that preserves quality and verification.
+The manager should choose the lightest mode that preserves safe execution and honest
+completion. Do not mirror a native Plan into JSON or Markdown.
+
+## Progress And Codex Routing
+
+Progress means new evidence, an artifact change, a test result, or a binding decision. Once
+a reversible action can distinguish the current hypotheses, execute it instead of extending
+the plan. After two no-progress cycles, record facts, assumptions, the current hypothesis,
+and one falsifying experiment. If it yields no evidence, stop that reasoning chain.
+
+When explicit Codex routing is available, the configured policy keeps the parent on Sol
+`max` for planning and acceptance, and uses Luna `max` for justified long implementation,
+integration, and mechanically verifiable execution. Sol workers remain bounded to one
+planning, fresh-diagnosis, or concrete high-risk review question. Stagnation never raises
+reasoning effort automatically. New runs record
+`progress-bounded-v2`; legacy `cost-aware-v1` Audited runs keep their sealed v1 profile map
+so resume validation does not reinterpret historical dispatches.
 
 ---
 
-## Full Harness Protocol
+## Portable And Audited Protocol
 
-Full mode uses a durable protocol for work that needs stronger coordination.
+Portable v2 is the default durable protocol. Audited controls are extensions, not a second
+mandatory workflow.
 
-### 1. Mode Selection Gate
+### 1. Materialize A Contract
 
-The manager records why Direct, Lite, or Full mode is appropriate. Full mode is justified by independent ownership surfaces, long or resumable scope, material verification risk, evaluator value, or isolation and rollback value.
+Materialize only after the native Plan is actionable and a durability trigger exists:
 
-### 2. Capability Gate
-
-Before assigning work, the manager records the runtime capabilities that are actually available:
-
-- real sub-agent or delegation mechanism
-- filesystem write access
-- shell and sandbox limits
-- worktree support
-- browser or UI verification capability
-- instruction files or hooks that can carry protocol rules
-- external services, credentials, and network assumptions
-
-If a capability is unavailable, the manager must choose a fallback such as sequential execution, narrower scope, a decision request, or a stop state.
-
-### 3. State Machine
-
-Full mode advances through explicit states:
-
-```text
-INTAKE -> GATED -> SPECIFIED -> DISPATCHED -> REPORTED -> EVALUATING -> ACCEPTED -> HANDED_OFF
+```bash
+python3 <skill-dir>/scripts/harnessctl.py materialize . \
+  --title "Checkout refactor" \
+  --goal "Complete the checkout refactor without changing public behavior" \
+  --done-when "Focused and regression tests pass" \
+  --constraint "Preserve unrelated changes" \
+  --next-action "Inspect the checkout state boundary"
 ```
 
-Stop states are first-class:
+This creates exactly three core files under `.harness/<slug>/`:
 
-```text
-BLOCKED -> NEEDS_DECISION -> FAILED
+- `contract.json`: the only mutable source of truth
+- `events.jsonl`: append-only transition and evidence index
+- `capsule.md`: bounded, regenerated context for the receiving model
+
+### 2. Checkpoint Verified Boundaries
+
+Checkpoint after a meaningful verified result or before a likely interruption, not after
+every tool call. Evidence remains in the project; the contract stores only a relative path,
+SHA-256 digest, and size.
+
+```bash
+python3 <skill-dir>/scripts/harnessctl.py checkpoint . \
+  --runtime codex --actor-id codex-main --owner-epoch 1 \
+  --completed "Focused regression passes" \
+  --next-action "Run the package verification" \
+  --evidence-file reports/focused-test.txt \
+  --reason "Verified implementation boundary"
 ```
 
-Each state transition should leave a compact trace entry with the reason, owner, evidence path, and next state.
+The first checkpoint claims epoch 1 and omits `--owner-epoch`.
 
-### 4. Acceptance Registry
+### 3. Handoff And Resume
 
-Acceptance criteria are tracked as structured records. Each record should include:
-
-- criterion
-- owner
-- required evidence
-- status: `pending`, `pass`, `fail`, `blocked`, or `scoped_out`
-- evidence path or command result summary
-
-The manager cannot claim completion while required criteria remain unverified.
-
-### 5. Budget Circuit Breaker
-
-Each stage should have a budget envelope for time, context, tool calls, retries, cost, and external side effects. When a stage exceeds the envelope, the manager records the stop reason and chooses whether to continue, split, reduce scope, or ask for a decision.
-
-### 6. Trace
-
-Trace records the minimum durable evidence needed to resume and audit a run:
-
-- capability gate result
-- state transitions
-- worker report paths
-- evaluator result
-- budget stop or retry reason
-- final acceptance registry
-
-Chat history is not treated as durable task state.
-
-### 7. Cross-Runtime Continuation
-
-A replacement runtime starts from the project root, not from an artifact path or old chat:
+Use `handoff` for a clean transfer. The replacement runtime starts from the project root:
 
 ```bash
 python3 <skill-dir>/scripts/harnessctl.py resume . \
-  --runtime grok --actor-id <unique-session-id> \
-  --takeover-reason "previous Codex session interrupted"
+  --runtime claude --actor-id claude-main
 ```
 
-`resume` discovers exactly one active Full run, recovers incomplete transactions, validates
-the complete artifact, transfers ownership under a lock, and returns required reads, active
-tasks, blockers, explicit next action, pending verification, owner epoch, and repository
-drift. All later mutations carry that actor ID and epoch; stale sessions fail closed.
+`resume` validates the contract, rejects ambiguous active Portable/Full state, checks
+workspace drift, transfers ownership, regenerates the capsule, and returns `must_read`,
+`read_if_needed`, blockers, pending verification, and one safe next action. An abrupt active
+owner takeover additionally requires `--takeover-reason`.
 
-Checkpoint after verified boundaries and before likely interruption. A clean source runtime
-may run `handoff`; an abrupt replacement uses a takeover reason. This transfers durable
-observable state, not hidden reasoning, provider session internals, secrets, or in-flight
-external side effects. The harness does not receive quota callbacks; automatic takeover
-begins when the replacement runtime is launched and runs `resume`.
+At a terminal boundary, run `close --status accepted|failed|cancelled`. Accepted closure
+requires evidence and no unresolved blocker or pending verification; closed contracts no
+longer participate in active-run selection.
+
+### 4. Portable Data Boundary
+
+Persist observable facts only: goal, `done_when`, constraints, completed milestones,
+blockers, decisions with short rationale, changed paths, evidence digests, capabilities,
+and tiered reads. Do not persist hidden reasoning, full chats, provider session objects,
+secrets, or in-flight external side effects.
+
+### 5. Audited Escalation
+
+Add only the control required by the risk:
+
+- typed acceptance receipts and manager re-verification
+- Production State Witness for UI/state/async/concurrency paths
+- protected RED/GREEN chronology for behavior changes
+- evaluator separation, stronger rollback, and detailed trace
+- owner epoch fencing for disputed or concurrent writers
+
+Audited does not imply parallel workers. Worker use remains an independent cost/ownership
+decision.
+
+### 6. Legacy Full Compatibility
+
+Existing `handoff-v1` artifacts under `workspace/<slug>/` remain valid. The same
+`checkpoint`, `handoff`, `resume`, and `validate` commands continue to support them. Do not
+rewrite a valid legacy artifact only to change its format.
+
+### 7. Acceptance Boundary
+
+Worker self-report and harness scores are not completion evidence. The manager must re-run
+or inspect critical checks. For user-visible failures, policy-only unit tests cannot replace
+flow or visible evidence when those tiers are available.
 
 ---
 
@@ -197,11 +226,29 @@ Install the runtime package into Codex:
 
 ```bash
 mkdir -p ~/.codex/skills/agent-reliability-harness
-rsync -a --delete /tmp/agent-reliability-harness-runtime/ ~/.codex/skills/agent-reliability-harness/
+rsync -a --delete --exclude workspace --exclude .harness \
+  /tmp/agent-reliability-harness-runtime/ ~/.codex/skills/agent-reliability-harness/
 python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
 ```
 
 The runtime package contains only the files needed by the skill at execution time.
+
+Recommended Codex defaults for this routing policy:
+
+```toml
+model = "gpt-5.6-sol"
+model_reasoning_effort = "max"
+service_tier = "fast"
+
+[agents]
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
+```
+
+This configuration is optional and remains user-owned. Do not copy a private model cache
+or set `model_catalog_json` as part of skill installation. If Luna is unavailable, retain
+the requested route in evidence, record the runtime-resolved fallback separately, and do
+not claim that a Luna worker ran.
 
 ---
 
@@ -230,11 +277,16 @@ The runtime package includes:
 - `agents/openai.yaml`
 - `adapters/`
 - `references/`
+  - `references/portable-contract.md`
+  - `references/harness-protocol.md`
   - `references/state-memory-boundary.md`
   - `references/model-routing.md`
 - `templates/`
+- `scripts/harnessctl.py`
 - `scripts/init_run.py`
 - `scripts/harness_test_run.py`
+- `scripts/protocol_regression_harness.py`
+- `scripts/runtime_profiles.py`
 - `scripts/status.py`
 - `scripts/tdd_gate_check.py`
 - `scripts/validate_report.py`
@@ -251,6 +303,7 @@ It intentionally excludes:
 - `scripts/sync_version.py`
 - `scripts/package_skill.py`
 - `.git`
+- generated `.harness/` artifacts
 - generated workspace artifacts
 - local memory files
 - session logs
@@ -274,7 +327,7 @@ Small task with multi-agent wording:
 Use multi-agent if needed to fix this typo.
 ```
 
-Expected behavior: the manager should choose Direct mode because dispatch overhead is not justified.
+Expected behavior: stay Native and do not delegate because dispatch overhead is not justified.
 
 Long task requiring durable coordination:
 
@@ -282,17 +335,38 @@ Long task requiring durable coordination:
 Refactor checkout, update API contracts, migrate tests, and verify the UI flow. Use sub-agents and keep the work resumable.
 ```
 
-Expected behavior: the manager should choose Lite or Full mode depending on risk, available tools, and verification requirements.
+Expected behavior: materialize Portable state because the work must resume; add Audited
+extensions only if the actual risk requires them. Worker use remains a separate decision.
 
 ---
 
-## Artifact Initialization
+## Portable Materialization And Audited Initialization
 
-For Full mode, initialize a durable run:
+For new resumable work, materialize Portable v2:
+
+```bash
+python3 scripts/harnessctl.py materialize /path/to/project \
+  --title "Checkout Refactor" \
+  --goal "Refactor checkout while preserving behavior" \
+  --done-when "Checkout regression suite passes" \
+  --next-action "Inspect the production checkout flow"
+```
+
+This creates only:
+
+```text
+/path/to/project/.harness/checkout-refactor/
+├── contract.json
+├── events.jsonl
+└── capsule.md
+```
+
+For Audited controls or legacy Full workflows, initialize the full record set:
 
 ```bash
 python3 scripts/init_run.py \
   --project-root /path/to/project \
+  --mode audited \
   --title "Checkout Refactor" \
   --agents frontend,backend,tests
 ```
@@ -319,7 +393,13 @@ This creates:
 
 ## Report Validation
 
-Validate generated reports before relying on them:
+Validate a Portable contract directly:
+
+```bash
+python3 scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
+```
+
+For Audited or legacy artifacts, validate generated reports before relying on them:
 
 ```bash
 python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
@@ -391,9 +471,11 @@ The protocol is runtime-neutral. Adapters describe how to apply it in specific a
 - [Codex adapter](adapters/codex.md)
 - [Grok adapter](adapters/grok.md)
 - [Claude Code adapter](adapters/claude-code.md)
-- [Harness protocol reference](references/harness-protocol.md)
+- [Portable Contract v2](references/portable-contract.md)
+- [Audited and legacy protocol](references/harness-protocol.md)
 
-Adapters do not change the protocol. They map the same gates, artifacts, evidence rules, and fallback behavior to the available runtime controls.
+Adapters map native planning, worker controls, and optional model profiles to each runtime.
+They must not add provider-specific fields to the Portable contract.
 
 ---
 
@@ -406,15 +488,50 @@ The design is influenced by [obra/superpowers](https://github.com/obra/superpowe
 The project does not copy Superpowers skill bodies and does not require the Superpowers plugin. The relationship is:
 
 ```text
-agent-reliability-harness = routing and harness authority
+agent-reliability-harness = durability and acceptance authority
 Superpowers-style methods = optional supporting engineering practices
 ```
 
-Mode selection always runs first. Supporting methods are applied only when they fit the selected execution mode.
+Native / Portable / Audited selection runs first. Supporting methods are applied only when
+they fit the selected mode and measured risk.
 
 ---
 
 ## Release History
+
+### v9.1.0
+
+- Aligned Codex planning and acceptance with Sol `max`, while keeping justified execution
+  routes on Luna `max`.
+- Documented the optional Codex parent/sub-agent configuration and kept private model-cache
+  overrides outside the distributed skill.
+- Clarified that routed profiles do not replace the active parent session and that requested
+  versus resolved models must be recorded separately.
+
+### v9.0.0
+
+- Added an observable Progress Circuit Breaker that stops after two no-progress cycles and
+  requires a fresh diagnosis before rerouting.
+- Routed long-running and mechanical Codex execution to Luna `max`; limited Sol to bounded
+  diagnosis, planning, and concrete acceptance review.
+- Versioned the new route as `progress-bounded-v2` while preserving sealed validation for
+  legacy `cost-aware-v1` Audited runs.
+- Removed domain-specific effect-reconstruction policy from the generic skill entry and
+  reduced duplicate planning, reporting, and review instructions.
+
+### v8.0.0
+
+- Replaced the prompt-level Direct/Lite/Full router with Plan-native Native, Portable, and
+  Audited modes.
+- Added Portable Contract v2 with a three-file core, bounded resume capsule, tiered reads,
+  evidence digests, workspace drift checks, cross-runtime owner transfer, and terminal close.
+- Kept `handoff-v1` Full compatibility while moving provider/model maps outside the
+  portable schema and retaining heavy evidence controls only for Audited work.
+
+### v7.5.0
+
+- Added typed evidence hardening, artifact binding, lessons integrity, protected TDD
+  chronology, and adversarial protocol regression coverage for Full runs.
 
 ### v7.4.0
 

@@ -4,37 +4,46 @@
 
 ## 项目定位
 
-本仓库维护一个跨模型可用的 **任务执行 OS / agent skill**（Codex、Claude Code、Grok 等）。目标是按风险选择最轻执行密度，而不是把每个任务都变成多智能体编排。
+本仓库维护一个运行时中立、Plan-native 的可靠性 skill。它复用 Codex、Claude Code、Grok 等运行时的原生规划，只在任务需要跨会话、跨模型或强审计时增加持久状态。
 
 核心原则：
 
-- 密度优先：Direct → Spec Synthesis → Lite → Full；口头「多 agent」不等于必须派工。
-- 模糊目标先 Spec Synthesis（成功条件 / 假完成 / 验收规则），再写代码。
-- Full Harness 只用于长任务、高风险、可续跑、需要 evaluator 或证据化验收的工作。
-- 只接受外部证据；`score_harness` 高分不等于产品完成。
-- State 和 Memory 必须分离。单次 run artifact 只保存本次任务状态和审计日志，跨任务经验只能作为 memory candidate，不能自动晋升。
+- 默认选择能可靠完成任务的最轻模式：Native、Portable、Audited。
+- Native 使用运行时原生 Plan，不写 harness 文件，也不复制计划。
+- Portable 只保存 `contract.json`、`events.jsonl`、`capsule.md`；`contract.json` 是唯一可变真相。
+- Audited 才启用 typed receipts、Production State Witness、受保护 TDD chronology、evaluator 和更强 fencing。
+- 并行是执行选择，不是模式；只有责任边界独立且收益高于协调成本时才使用 worker。
+- Portable 核心只保存可观察事实，不保存 chain-of-thought、完整聊天、provider reasoning、secret 或 in-flight 外部副作用。
+- 保持 legacy `handoff-v1` Full artifact 可恢复，不静默迁移或破坏旧格式。
+- provider/model slug 只能存在于 runtime profile 或 adapter，不进入 Portable contract。
 
 ## 主要文件
 
 - `SKILL.md`：Codex skill 的入口协议和触发说明。
 - `VERSION`：当前发布版本的单一来源。
 - `README.md` / `README.zh-CN.md`：公开说明，必须保持英文和中文同步。
-- `references/`：可按需加载的协议、lane、边界和评估说明。
-- `templates/`：Lite 和 Full Harness 运行时 artifact 模板。
-- `scripts/init_run.py`：初始化 Lite 或 Full Harness run artifact。
+- `references/portable-contract.md`：Portable v2 schema、capsule、handoff 和 resume 规则。
+- `references/harness-protocol.md`：Audited 与 legacy `handoff-v1` 协议。
+- `templates/`：Audited artifact 和 worker result 模板。
+- `scripts/harnessctl.py`：Portable 与 Audited 的 materialize/checkpoint/handoff/resume/validate 控制器。
+- `scripts/init_run.py`：初始化 Audited 或 legacy Full artifact；Portable 使用 `harnessctl materialize`。
 - `scripts/status.py`：从 `run_state.json` 派生单屏状态摘要。
 - `scripts/validate_report.py`：校验 spec、progress、lite_plan、lite_review、evaluator 和 run_state 结构。
 - `scripts/tdd_gate_check.py`：TDD trace gate 检查。
+- `scripts/test_plan_native_portable.py`：Plan-native 与 Portable v2 行为回归。
+- `scripts/protocol_regression_harness.py`：Audited/legacy 拒绝边界回归。
 - `scripts/package_skill.py`：生成 runtime-only skill 包。
 
 ## 修改规则
 
-- 修改 skill 行为时，优先改 `SKILL.md` 和相关 `references/`，再同步模板和脚本。
+- 修改 skill 行为时，优先改行为测试，再改 `SKILL.md`、相关 `references/`、模板和脚本。
 - 修改公开行为或版本时，必须同步 `README.md` 和 `README.zh-CN.md`。
-- 修改当前版本时，先改 `VERSION`，再运行 `python3 scripts/sync_version.py --fix`。
+- 修改当前版本时，先改 `VERSION`，再运行 `python3 scripts/sync_version.py --fix --date YYYY-MM-DD`。
 - 修改 runtime 内容时，必须同步 `scripts/package_skill.py` 的包含/排除逻辑。
-- 不要把 `workspace/`、缓存、session 日志、私有配置或生成 artifact 加入 runtime 包。
+- 不要把 `workspace/`、`.harness/`、缓存、session 日志、私有配置或生成 artifact 加入 runtime 包。
 - 不要把本地安装目录 `~/.codex/skills/agent-reliability-harness` 当成源码。源码以本仓库为准。
+- `README.md` 与 `README.zh-CN.md` 的标题结构必须一致。
+- `SKILL.md` 默认不超过 1200 words，`master-prompt.md` 不超过 450 words，`agents/openai.yaml` 不超过 120 words。
 - 保持 diff 小而聚焦，不做无关重排、格式化或重命名。
 
 ## TDD 和验证
@@ -49,32 +58,29 @@
 常用验证命令：
 
 ```bash
-python3 -m json.tool templates/run_state.json >/dev/null
-python3 -m py_compile scripts/init_run.py scripts/package_skill.py scripts/status.py scripts/sync_version.py scripts/validate_report.py scripts/harness_test_run.py scripts/tdd_gate_check.py scripts/test_runtime_behavior.py
-git diff --check
-python3 scripts/sync_version.py
-python3 scripts/init_run.py --mode full --project-root /tmp/adh-smoke-full --title "full smoke" --agents docs,review --force
-python3 scripts/init_run.py --mode lite --project-root /tmp/adh-smoke-lite --title "lite smoke" --agents docs,adapter --force
-python3 scripts/validate_report.py /tmp/adh-smoke-full/workspace/full-smoke/task_spec.md --type spec
-python3 scripts/validate_report.py /tmp/adh-smoke-full/workspace/full-smoke/progress.md --type progress
-python3 scripts/validate_report.py /tmp/adh-smoke-full/workspace/full-smoke/evaluator_report.md --type evaluator
-python3 scripts/validate_report.py /tmp/adh-smoke-lite/workspace/lite-smoke/lite_plan.md --type lite_plan
-python3 scripts/status.py /tmp/adh-smoke-full/workspace/full-smoke/run_state.json
+python3 scripts/test_plan_native_portable.py
 python3 scripts/test_runtime_behavior.py
+python3 scripts/protocol_regression_harness.py --skill-root . --pretty
+python3 scripts/test_handoff_resume.py
+python3 -m py_compile scripts/*.py
 python3 scripts/package_skill.py --verify-source
 python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
+python3 scripts/package_skill.py --check /tmp/agent-reliability-harness-runtime
+python3 -m json.tool templates/run_state.json >/dev/null
+git diff --check
 ```
 
 如果改动影响 TDD trace：
 
 ```bash
-python3 scripts/tdd_gate_check.py templates/tdd_trace.jsonl
+python3 scripts/tdd_gate_check.py --trace templates/tdd_trace.jsonl
 ```
 
-如果同步本地安装：
+如果同步本地安装，必须先生成干净 runtime 包：
 
 ```bash
-rsync -a --delete /tmp/agent-reliability-harness-runtime/ /Users/sunrenhui/.codex/skills/agent-reliability-harness/
+rsync -a --delete --exclude workspace --exclude .harness \
+  /tmp/agent-reliability-harness-runtime/ /Users/sunrenhui/.codex/skills/agent-reliability-harness/
 python3 scripts/package_skill.py --check /Users/sunrenhui/.codex/skills/agent-reliability-harness
 ```
 
@@ -105,13 +111,3 @@ GitHub 发布通常包含：
 - 修改同一文件前要明确 owner，避免并行冲突。
 - reviewer/evaluator 默认应在实现任务之后运行，不应和被审查实现并行，除非它只审查已存在 artifact。
 - 主 agent 合并结果后必须亲自 review diff 和运行验证。
-
-## 当前上下文
-
-如果从新线程继续，请先读取桌面的项目 handoff：
-
-`/Users/sunrenhui/Desktop/agent-reliability-harness-project-handoff.md`
-
-再读取完整自动导出的线程 handoff：
-
-`/Users/sunrenhui/Desktop/20260708-171231-codex-019e62a7-full-Files-mentioned-by-the-user--多-agent.md`

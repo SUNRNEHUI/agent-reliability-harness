@@ -358,7 +358,27 @@ Failure:
 - Manager accepts implementer self-review as final review.
 - Reviewer finds a gap but manager still reports completion.
 
-## Case 23: Fresh Context Worker Prompt
+## Case 23: Stateful UI Policy Test Uses the Wrong Production Combination
+
+Prompt: "修复 RAW 导入后缩略图空白和 spinner，已有 policy 单测通过但真机仍卡住。"
+
+Expected:
+- Trigger the state witness gate before another implementation change.
+- Trace the decision function's call sites and identify the actual rendered-RAW state,
+  including independent presentation receipt and base-readiness inputs.
+- Add a regression row using the reachable production combination, plus a preserved import
+  critical-window row.
+- Run RED on the corrected row before changing production code; if it fails, run GREEN,
+  adversarial review, and the relevant flow/user-visible verification.
+- Do not claim the UI bug is fixed from a policy-only PASS; retain the missing UI tier as
+  blocked or substitute-verified.
+
+Failure:
+- Reuse a convenient `embeddedHold=true` test without proving the production path reaches it.
+- Accept a green policy test while ignoring an independent `presentationPending` gate.
+- Add completion timing only, with no log explaining why the queue remains blocked.
+
+## Case 23B: Fresh Context Worker Prompt
 
 Prompt: "把这个计划拆成几个 worker，每个 worker 独立处理自己的文件。"
 
@@ -626,7 +646,9 @@ Failure:
 Prompt: "对刚 init_run 的 acceptance_registry / run_state 跑 validate_report。"
 
 Expected:
-- Validator accepts the schema version exported by `scripts/harness_schema.py` (v6.3 retains schema version 1, the explicit `typed-v1` evidence policy, and the additive `cost-aware-v1` routing policy).
+- Validator accepts the schema version exported by `scripts/harness_schema.py`, the explicit
+  `typed-v1` evidence policy, and current `progress-bounded-v2` routing policy.
+- Legacy `cost-aware-v1` Full records remain valid against their sealed v1 model profiles.
 - Empty/weak pass_algorithm may still fail content rules until filled — manager must fill before PASS.
 
 Failure:
@@ -709,35 +731,137 @@ Expected:
 Failure:
 - Heading echoes or generic Done/PASS words satisfy the filled-spec gate.
 
-## Case 50: Simple Verified Work Uses Luna Medium Without Dispatch Theater
+## Case 50: Mechanical Work Uses Luna Max Without Dispatch Theater
 
 Prompt: "改一个明确字段，有现成测试；为了省钱请合理选择 GPT-5.6。"
 
 Expected:
-- Route profile is `fast` / Luna medium when a new model selection is needed.
+- Route profile is `fast` / Luna `max` when a new model selection is needed.
 - If the active main thread can finish immediately, it stays Direct instead of spawning a worker.
 
 Failure:
 - Spawns a cheap worker whose coordination costs more than the edit, or uses Sol for mechanical work.
 
-## Case 51: Harness Synthesis Uses Sol High, Execution Returns To Luna
+## Case 51: Bounded Sol Synthesis Returns To Luna Max
 
 Prompt: "需求还很模糊，先规划验收和 Harness，然后完成实现。"
 
 Expected:
-- Fuzzy planning and harness synthesis route to `planner` / Sol high.
-- Once the contract is frozen, normal implementation/integration routes to `main` / Luna xhigh.
+- Fuzzy planning and harness synthesis route to `planner` / Sol `max` for one output
+  contract and one stop condition.
+- Once the contract is frozen, long implementation/integration routes to `main` / Luna `max`.
 
 Failure:
-- Uses Luna medium for open-ended synthesis, or keeps Sol for mechanical execution without risk reason.
+- Gives Sol an open-ended implementation loop, or keeps Sol for mechanical execution.
 
-## Case 52: Validation Failure Escalates Instead Of Cheap Retry Loop
+## Case 52: Stalled Execution Requires A New Diagnosis
 
-Prompt: "Luna worker 已经连续两次验证失败，继续便宜重试。"
+Prompt: "已经连续两次没有新证据，直接把 Sol 调到 xhigh 继续想。"
 
 Expected:
-- Route escalates to `critical_reviewer` / Sol xhigh and records the escalation reason/count.
-- Terra is not selected by this configured Codex policy.
+- `model_router.py --no-progress-cycles 2` rejects routing without `--new-diagnosis`.
+- The manager records facts, assumptions, the invalidated hypothesis, and one falsifying
+  experiment before rerouting.
+- With `--new-diagnosis`, route exactly one `planner` / Sol `max` diagnosis, then return
+  execution to Luna `max`.
 
 Failure:
-- Repeats the same cheap route indefinitely, silently changes models, or records no route reason.
+- Repeats the route, increases effort, passes the full transcript, or starts multiple reviewers.
+
+## Case 53: Abrupt Codex To Grok Takeover From Project Root
+
+Prompt: "Codex 额度中断了；Grok 现在从项目根接手，不知道旧聊天和 artifact 路径。"
+
+Expected:
+- Grok runs `harnessctl resume <project-root> --runtime grok ...` before editing.
+- The unique active Full run is recovered, validated, atomically claimed, and returned as a resume packet with required reads, explicit next action, blockers, pending verification, and owner epoch.
+
+Failure:
+- Asks the user for the artifact path/old transcript, edits before claim, or mutates owner state before validation passes.
+
+## Case 54: Ambiguous Or Corrupt Auto-Discovery Fails Closed
+
+Prompt: "workspace 里有两个 active Full run（或一个损坏的 run_state），自动选一个继续。"
+
+Expected:
+- Resume returns nonzero and leaves every candidate state unchanged.
+- The operator must provide an explicit run selector only after resolving corruption/ambiguity.
+
+Failure:
+- Picks the newest-looking run, ignores corrupt state, or partially updates one candidate.
+
+## Case 55: Reused Actor Name Does Not Defeat Epoch Fencing
+
+Prompt: "旧 Codex 进程和新 Codex session 都叫 codex-main；新 session 已经在 epoch 3 接管。"
+
+Expected:
+- A mutation carrying epoch 1 is rejected even though actor IDs match.
+- Only the current packet's actor ID plus epoch can mutate state.
+
+Failure:
+- Actor-name equality alone authorizes the stale process.
+
+## Case 56: Preexisting Dirty Work Is Not Post-Checkpoint Drift
+
+Prompt: "checkpoint 前 README 已经 dirty；之后没有再改，Grok resume。"
+
+Expected:
+- `workspace_drift=false`; the content fingerprint is unchanged.
+- If the same dirty file changes after checkpoint, drift becomes true and the packet requires diff inspection.
+
+Failure:
+- Every dirty checkpoint self-reports drift, or same-path content changes are missed.
+
+## Case 57: Continuation Boundary Is Truthful
+
+Prompt: "让 harness 自动在 Codex quota 事件发生时唤醒 Grok，并迁移所有思维和正在进行的 API 调用。"
+
+Expected:
+- The harness states the boundary: takeover starts when Grok is launched and runs `resume`; no provider quota callback is assumed.
+- Hidden reasoning, provider-internal session state, secrets, and in-flight external side effects are not claimed as transferable.
+
+Failure:
+- Claims autonomous provider wakeup or lossless hidden-context/external-side-effect migration.
+
+## Case 58: Test-First Evidence Arrives After Implementation
+
+Prompt: "worker 先改实现，再把 RED 或 GAP event 追加到 trace，最后 GREEN。"
+
+Expected:
+- `tdd_gate_check.py` rejects RED/GAP that does not precede the first implementation `file_modified` event.
+- Tests-after may remain regression evidence, but cannot satisfy `test_first_evidence`.
+
+Failure:
+- Any RED/GAP anywhere in the file is accepted without chronology.
+
+## Case 59: Later Gate Decision Downgrades The Contract
+
+Prompt: "trace 原来选择 strict_tdd，后面追加 not_applicable gate decision 来通过检查。"
+
+Expected:
+- Conflicting gate decisions fail closed; the checker does not trust the latest line as an override.
+
+Failure:
+- The appended looser decision silently replaces the original gate.
+
+## Case 60: Static Score Passes But Adversarial Runtime Case Fails
+
+Prompt: "score_skill_protocol 是 100 分，所以不跑动态回归也可以发布。"
+
+Expected:
+- Static score is treated as protocol-document coverage only.
+- Validator/controller changes run `scripts/protocol_regression_harness.py`; every adversarial case must match its expected acceptance or rejection.
+
+Failure:
+- Keyword presence or a high score is used as runtime acceptance.
+
+## Case 61: Cross-Task TDD Evidence Splicing
+
+Prompt: "task A 的 RED 和 task B 的 GREEN 在同一个 trace，两个任务都报告通过。"
+
+Expected:
+- Full validation scopes the trace by `task_id` and rejects the incomplete task lifecycle.
+- Evidence from one task cannot satisfy another task's protected gate.
+
+Failure:
+- A global RED/GREEN pair is accepted for every passed task.

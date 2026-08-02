@@ -1,90 +1,97 @@
-# Proportionality Guide
+# Proportionality And Progress Budget
 
-How much harness to write so models stay precise **without** burning tokens.
+Use this reference when coordination competes with implementation, mode selection is
+unclear, or reasoning continues without observable progress.
 
-## Decision checklist (30 seconds)
+## Decision Checklist
 
-1. Can one agent finish and verify in one sitting with low false-completion risk? → **Direct**
-2. Is success easy to fake (proxy UI, “tests green”, self-report)? → **Synthesize** (compact minimum)
-3. Is the goal fuzzy (更快/更好/专业一点) without a measurable terminal? → **Synthesize**
-4. Are there ≥2 independent ownership surfaces **and** user authorized workers? → **Lite**
-5. Multi-session, high risk, evaluator, worktree isolation, or durable evidence? → **Full**
+1. Can the active session implement and verify the next slice without expensive context
+   reconstruction? Use **Native**.
+2. Will work cross a session/model boundary, wait externally, or involve multiple writers
+   whose decisions must survive context loss? Use **Portable**.
+3. Is the next transition destructive, production-facing, permission-sensitive, disputed,
+   or a protected acceptance claim? Add only the required **Audited** controls.
 
-If none of 2–5 → Direct. If 2–3 only → synthesize then Direct/Lite. If 5 → Full.
+Task size alone is not a mode trigger. A large local implementation can remain Native; a
+one-line production permission change may require an Audited control.
 
-## Density matrix
+## Delivery Budget
 
-| Artifact | Direct | Direct+ | Lite | Full |
-|----------|--------|---------|------|------|
-| Chat plan (≤10 lines) | optional | yes | yes | summary only |
-| `synthesis_notes.md` | no | if fuzzy | if fuzzy | optional (prefer task_spec) |
-| `task_spec.md` | no | no | rare | yes |
-| `acceptance_registry.json` | no | no | rare | yes (+ pass_algorithm) |
-| `run_state.json` | no | no | **no** (unless escalated) | yes |
-| `tasks/*.md` contracts | no | no | optional short | yes |
-| Worker reports | no | no | compact | required |
-| `score_harness` | no | no | optional | when judging plan quality |
+Before the first executable or directly testable slice:
 
-## When writing costs more than it saves
+- Name the slice and its literal run command or user action.
+- Spend at most one coordination pass on routing, reports, or review.
+- Keep at least one lane implementing or running the slice.
+- Do not start a reviewer until a candidate exists.
+- Stop adding process artifacts when their creation takes longer than the next product step.
 
-- Single-file fix with clear test
-- Docs-only wording tweak
-- User asked a factual question
-- You would spend more tokens explaining the DAG than doing the work
+After the slice runs, spend evidence effort in response to observed mismatch or acceptance
+risk. Do not pre-pay every future profile's proof cost.
 
-Then: **Direct**. Say briefly if user asked for multi-agent on a tiny task.
+## Progress Budget
 
-## When under-writing costs more than tokens
+A cycle advances only when it creates new evidence, an artifact change, a test result, or a
+binding decision. Planning and prose that restate the same hypothesis do not reset the
+budget.
 
-- Performance/correctness with proxy metrics
-- Cross-session work
-- Parallel agents on shared files without ownership
-- User cannot define done; you skip synthesis and “just code”
+After two no-progress cycles:
 
-Then: at least **compact synthesis**; Full if long/resumable.
+1. Mark the path `STALLED`.
+2. Separate facts, assumptions, and the current hypothesis.
+3. Run the cheapest reversible experiment that can falsify the hypothesis.
+4. If it adds no evidence, stop that reasoning chain.
+5. Use at most one fresh bounded diagnosis with the compact fact packet, or report the
+   blocker.
 
-## Compact synthesis template (copy)
+Do not increase reasoning effort, broaden the inventory, or repeat the full verification
+matrix merely because a path stalled.
 
-```markdown
-## Success
-- User sees: …
-- System: …
+## Artifact Matrix
 
-## Not success
-1. …
-2. …
-3. …
+| Artifact | Native | Portable | Audited |
+| --- | --- | --- | --- |
+| Chat plan | Optional, short | Short summary | Summary only |
+| Durable contract/capsule | No | Yes | Yes |
+| Full task spec/registry/state | No | No | Only when the audited protocol requires it |
+| Worker report file | No by default | Only for handoff | Only when acceptance requires it |
+| Command/test receipt | Decisive checks | Paths and digests | Typed for protected claims |
+| Independent review | One real boundary | One real boundary | Risk-scoped |
 
-## Constraints / non-goals
-- …
+Never create both a worker narrative and a manager narrative when one structured result plus
+the underlying command receipt answers the acceptance question.
 
-## Accept
-- Rule or TBD after measure: …
+## Review Triage
 
-## Steps (risk order)
-0. …
-1. …
+Blocking findings invalidate the current slice or make continuation unsafe:
 
-## First action / Stop if
-- …
+- wrong output, broken critical workflow, data loss, or destructive behavior;
+- privacy or credential exposure;
+- false or chronologically invalid tests/evidence;
+- an expensive-to-reverse architecture decision.
+
+Queue wording, report polish, duplicate provenance, future-profile generality, and unrelated
+optimization unless the acceptance boundary explicitly requires them.
+
+Review one concrete candidate. After a blocking repair, re-review only the changed surface
+and its integration boundary.
+
+## Vertical Slice Order
+
+```text
+one real input -> one real execution path -> runnable output -> decisive comparison
+-> diagnose observed gap -> fix -> acceptance gate -> expand
 ```
 
-## Full init (only Full)
+An `EXPERIMENTAL`, `UNVERIFIED`, or `UNALIGNED` slice may drive the next comparison. It must
+not be called exact, accepted, production-ready, or complete.
 
-```bash
-python3 <skill-dir>/scripts/init_run.py \
-  --project-root <project> \
-  --title "<title>" \
-  --with-synthesis
-# add --agents a,b only when dispatch is real; they stay planned until synthesis passes
-```
+## Anti-Patterns
 
-## Anti-patterns
-
-| Anti-pattern | Fix |
-|--------------|-----|
-| Full `workspace/` for typo | Direct |
-| Empty `init_run` treated as plan | Fill synthesis; empty = intake only |
-| Keyword-stuffed fake plan | Use real pass_algorithm; score_harness integrity |
-| Invent SLOs to look precise | TBD + measurement plan |
-| Chat dumps of entire JSON state | Paths + 4-line status |
+| Anti-pattern | Correction |
+| --- | --- |
+| Every worker gets a task file, report, trace, and reviewer | Use a concise Native result |
+| All worker slots analyze or review | Keep an implementation/runtime lane active |
+| A final risky claim makes every precursor Audited | Audit the risky transition |
+| Full inventory blocks a representative slice | Run it later or in a separate lane |
+| Every review comment restarts the loop | Repair only blocking findings |
+| Stagnation increases effort or fan-out | Require new evidence or stop |

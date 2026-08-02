@@ -5,14 +5,15 @@ from __future__ import annotations
 
 
 SCHEMA_VERSION = 1
-MODEL_ROUTING_POLICY = "cost-aware-v1"
+LEGACY_MODEL_ROUTING_POLICY = "cost-aware-v1"
+MODEL_ROUTING_POLICY = "progress-bounded-v2"
+MODEL_ROUTING_POLICIES = (MODEL_ROUTING_POLICY, LEGACY_MODEL_ROUTING_POLICY)
 AGENT_PROFILES = {"fast", "main", "planner", "critical_reviewer"}
-CODEX_MODEL_PROFILES = {
-    "fast": {"model": "gpt-5.6-luna", "reasoning_effort": "medium"},
-    "main": {"model": "gpt-5.6-luna", "reasoning_effort": "xhigh"},
-    "planner": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
-    "critical_reviewer": {"model": "gpt-5.6-sol", "reasoning_effort": "xhigh"},
-}
+
+
+CONTINUATION_PROTOCOL = "handoff-v1"
+CONTINUATION_STATUSES = {"unclaimed", "active", "ready"}
+TERMINAL_RUN_STATUSES = {"accepted", "handed_off", "failed"}
 
 RUN_STATUSES = {
     "intake",
@@ -76,6 +77,9 @@ DISPATCH_TRANSITIONS = {
 
 EVIDENCE_POLICY = "typed-v1"
 QUALIFYING_EVIDENCE_TYPES = {"artifact_digest"}
+VERIFICATION_TIERS = ("policy", "flow", "user_visible")
+VERIFICATION_TIER_RANK = {tier: index for index, tier in enumerate(VERIFICATION_TIERS)}
+STATE_WITNESS_REVIEW_STATUSES = {"not_required", "pending", "pass", "fail", "blocked"}
 
 TASK_TRANSITIONS = {
     "planned": {"ready", "blocked", "cancelled"},

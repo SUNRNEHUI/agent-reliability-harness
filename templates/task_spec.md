@@ -30,6 +30,11 @@
 user action -> ... -> actual terminal success event
 ```
 
+## Production State Witness (required for state/UI/async/concurrency behavior)
+
+<!-- Link state_witness.md or fill the compact witness: real call-site inputs, producers,
+     lifecycle, failing state row, preserved blocking row, and executable test mapping. -->
+
 ## Phases (risk-ordered)
 
 ### Phase 0

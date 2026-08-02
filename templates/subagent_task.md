@@ -8,7 +8,7 @@
 
 ## Dependencies
 
-- 
+-
 
 ## Allowed Scope
 
@@ -22,6 +22,8 @@
 - 契约/接口：
 - 约束：
 - 假成功提醒（本任务相关）：
+- Production State Witness：required / not required
+- Witness path and critical row IDs：
 
 ## Testing Gate / Verification
 
@@ -33,6 +35,7 @@
 - 环境/浏览器检查：
 - 期望证据路径：
 - acceptance_registry 关联：
+- Required verification tier：policy / flow / user_visible
 - run_state 更新建议：
 
 ## Required Outputs

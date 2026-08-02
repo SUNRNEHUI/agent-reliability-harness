@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import unicodedata
@@ -12,17 +13,22 @@ from pathlib import Path
 from harness_schema import (
     ACCEPTANCE_STATUSES,
     AGENT_PROFILES,
-    CODEX_MODEL_PROFILES,
+    CONTINUATION_PROTOCOL,
+    CONTINUATION_STATUSES,
     DISPATCH_STATUSES,
     EVIDENCE_POLICY,
     MODES,
-    MODEL_ROUTING_POLICY,
+    MODEL_ROUTING_POLICIES,
     QUALIFYING_EVIDENCE_TYPES,
     RUN_STATUSES,
     SCHEMA_VERSION,
+    STATE_WITNESS_REVIEW_STATUSES,
     TASK_STATUSES,
+    VERIFICATION_TIERS,
     VERIFICATION_GATE_MODES,
 )
+from runtime_profiles import model_profiles_for
+from state_witness_check import validate as validate_state_witness
 
 
 REQUIRED_SECTIONS = {
@@ -31,6 +37,7 @@ REQUIRED_SECTIONS = {
         "Files Touched",
         "Commands Run",
         "Test-First Or Substitute Verification",
+        "Production State Witness",
         "Evidence",
         "Unresolved Risks",
         "Assumptions Affecting Merge",
@@ -40,6 +47,8 @@ REQUIRED_SECTIONS = {
     "evaluator": [
         "Scope Checked",
         "Testing Gate Evidence Checked",
+        "Production State Witness Checked",
+        "Verification Tier",
         "Evidence",
         "Blocking Issues",
         "Non-Blocking Issues",
@@ -72,6 +81,7 @@ REQUIRED_SECTIONS = {
     "lite_plan": [
         "Goal",
         "Workers",
+        "Production State Witness",
         "Merge Plan",
         "Verification Evidence",
         "Blocking Issues",
@@ -157,9 +167,34 @@ EVALUATOR_GATE_LABELS = (
     "Substitute reason checked",
     "Review gate evidence checked",
 )
+STATE_WITNESS_LABELS = (
+    "Witness path",
+    "Actual call chain verified",
+    "State producers/lifecycle verified",
+    "Failing state row covered",
+    "Preserved blocking row covered",
+    "Adversarial call-site review result",
+    "Missing or unreachable state combinations",
+)
+VERIFICATION_TIER_LABELS = (
+    "Policy tier",
+    "Flow tier",
+    "User-visible tier",
+    "Exact blocked boundary, if any",
+)
+SUBAGENT_STATE_WITNESS_LABELS = (
+    "Required for this task",
+    "Witness path or compact matrix",
+    "Real call-site inputs verified",
+    "Failing state row",
+    "Preserved blocking row",
+    "Adversarial review handoff",
+)
 
 
-def is_qualifying_evidence(value: object, subject: str) -> bool:
+def is_qualifying_evidence(value: object, subject: str, minimum_tier: str = "policy") -> bool:
+    if minimum_tier not in VERIFICATION_TIERS:
+        return False
     if not isinstance(value, dict) or value.get("type") not in QUALIFYING_EVIDENCE_TYPES:
         return False
     verification = value.get("verification")
@@ -169,6 +204,9 @@ def is_qualifying_evidence(value: object, subject: str) -> bool:
         and isinstance(verification, dict)
         and verification.get("status") == "verified"
         and bool(str(verification.get("transaction_id") or "").strip())
+        and str(value.get("verification_tier") or "policy") in VERIFICATION_TIERS
+        and VERIFICATION_TIERS.index(str(value.get("verification_tier") or "policy"))
+        >= VERIFICATION_TIERS.index(minimum_tier)
     )
 
 
@@ -199,6 +237,8 @@ def validate_evidence_list(
             errors.append(f"{item_prefix}.subject must be {subject!r}")
         if not isinstance(value.get("payload"), dict):
             errors.append(f"{item_prefix}.payload must be an object")
+        if "verification_tier" in value and value["verification_tier"] not in VERIFICATION_TIERS:
+            errors.append(f"{item_prefix}.verification_tier must be one of {', '.join(VERIFICATION_TIERS)}")
         verification = value.get("verification")
         if not isinstance(verification, dict):
             errors.append(f"{item_prefix}.verification must be an object")
@@ -443,6 +483,17 @@ def validate_evaluator_gate_section(markdown: str) -> list[str]:
     return errors
 
 
+def validate_label_section(markdown: str, section_name: str, labels: tuple[str, ...]) -> list[str]:
+    section = extract_section(markdown, section_name)
+    if not section:
+        return [f"missing section: {section_name}"]
+    return [
+        f"{section_name}: missing field {label!r}"
+        for label in labels
+        if extract_label_value(section, label) is None
+    ]
+
+
 def validate_progress_snapshot(markdown: str, section: str = "") -> list[str]:
     section_name = "Snapshot"
     section = section or extract_section(markdown, section_name)
@@ -590,6 +641,153 @@ def validate_state_layers(value: object, prefix: str) -> list[str]:
     return errors
 
 
+def validate_continuation(value: object, prefix: str) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"{prefix} must be an object"]
+
+    errors: list[str] = []
+    if value.get("protocol") != CONTINUATION_PROTOCOL:
+        errors.append(f"{prefix}.protocol must be {CONTINUATION_PROTOCOL!r}")
+    status = value.get("status")
+    if status not in CONTINUATION_STATUSES:
+        errors.append(f"{prefix}.status has unsupported status {status!r}")
+
+    owner = value.get("owner")
+    if not isinstance(owner, dict):
+        errors.append(f"{prefix}.owner must be an object")
+        owner = {}
+    for key in ("actor_id", "runtime", "claimed_at"):
+        if not isinstance(owner.get(key), str):
+            errors.append(f"{prefix}.owner.{key} must be a string")
+    epoch = owner.get("epoch")
+    if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
+        errors.append(f"{prefix}.owner.epoch must be a non-negative integer")
+    if status in {"active", "ready"}:
+        for key in ("actor_id", "runtime", "claimed_at"):
+            if not str(owner.get(key) or "").strip():
+                errors.append(f"{prefix}.owner.{key} must not be empty for status {status}")
+        if not isinstance(epoch, int) or epoch < 1:
+            errors.append(f"{prefix}.owner.epoch must be positive for status {status}")
+
+    previous_owner = value.get("previous_owner")
+    if not isinstance(previous_owner, dict):
+        errors.append(f"{prefix}.previous_owner must be an object")
+    takeover_count = value.get("takeover_count")
+    if not isinstance(takeover_count, int) or isinstance(takeover_count, bool) or takeover_count < 0:
+        errors.append(f"{prefix}.takeover_count must be a non-negative integer")
+
+    checkpoint = value.get("checkpoint")
+    if not isinstance(checkpoint, dict):
+        errors.append(f"{prefix}.checkpoint must be an object")
+        checkpoint = {}
+    for key in ("id", "checkpointed_at", "actor_id", "runtime", "reason", "current_task", "next_action"):
+        if not isinstance(checkpoint.get(key), str):
+            errors.append(f"{prefix}.checkpoint.{key} must be a string")
+    sequence = checkpoint.get("sequence")
+    if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
+        errors.append(f"{prefix}.checkpoint.sequence must be a non-negative integer")
+    if not str(checkpoint.get("next_action") or "").strip():
+        errors.append(f"{prefix}.checkpoint.next_action must not be empty")
+    if not isinstance(checkpoint.get("pending_verification"), list):
+        errors.append(f"{prefix}.checkpoint.pending_verification must be a list")
+    repository = checkpoint.get("repository")
+    if not isinstance(repository, dict):
+        errors.append(f"{prefix}.checkpoint.repository must be an object")
+    else:
+        for key in ("root", "cwd", "branch", "head"):
+            if not isinstance(repository.get(key), str):
+                errors.append(f"{prefix}.checkpoint.repository.{key} must be a string")
+        dirty_paths = repository.get("dirty_paths")
+        if not isinstance(dirty_paths, list) or not all(isinstance(item, str) for item in dirty_paths):
+            errors.append(f"{prefix}.checkpoint.repository.dirty_paths must be a string list")
+        dirty_entries = repository.get("dirty_entries")
+        if dirty_entries is not None and (
+            not isinstance(dirty_entries, dict)
+            or not all(
+                isinstance(key, str) and isinstance(item, str)
+                for key, item in dirty_entries.items()
+            )
+        ):
+            errors.append(f"{prefix}.checkpoint.repository.dirty_entries must be a string map")
+        worktree_digest = repository.get("worktree_digest")
+        if worktree_digest is not None and not isinstance(worktree_digest, str):
+            errors.append(f"{prefix}.checkpoint.repository.worktree_digest must be a string")
+
+    last_resume = value.get("last_resume")
+    if not isinstance(last_resume, dict):
+        errors.append(f"{prefix}.last_resume must be an object")
+    else:
+        for key in ("resumed_at", "actor_id", "runtime", "takeover_reason"):
+            if not isinstance(last_resume.get(key), str):
+                errors.append(f"{prefix}.last_resume.{key} must be a string")
+        if not isinstance(last_resume.get("forced"), bool):
+            errors.append(f"{prefix}.last_resume.forced must be a boolean")
+    return errors
+
+
+def validate_state_witness_record(value: object, prefix: str, run_state_path: Path, run_status: object) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"{prefix} must be an object"]
+
+    errors: list[str] = []
+    required = value.get("required")
+    if not isinstance(required, bool):
+        errors.append(f"{prefix}.required must be a boolean")
+        required = False
+    path_value = value.get("path")
+    if not isinstance(path_value, str):
+        errors.append(f"{prefix}.path must be a string")
+        path_value = ""
+    required_tier = value.get("required_tier")
+    if required_tier not in VERIFICATION_TIERS:
+        errors.append(f"{prefix}.required_tier must be one of {', '.join(VERIFICATION_TIERS)}")
+    observed_tier = value.get("observed_tier")
+    if observed_tier not in ("", *VERIFICATION_TIERS):
+        errors.append(f"{prefix}.observed_tier must be empty or one of {', '.join(VERIFICATION_TIERS)}")
+    review_status = value.get("review_status")
+    if review_status not in STATE_WITNESS_REVIEW_STATUSES:
+        errors.append(f"{prefix}.review_status has unsupported status {review_status!r}")
+    for key in ("reviewer_id", "sealed_digest", "reviewed_at"):
+        if not isinstance(value.get(key), str):
+            errors.append(f"{prefix}.{key} must be a string")
+    errors.extend(
+        validate_evidence_list(
+            value.get("review_evidence"),
+            f"{prefix}.review_evidence",
+            subject="state_witness",
+            protected=review_status == "pass",
+            policy=EVIDENCE_POLICY,
+        )
+    )
+
+    if not required:
+        if path_value or review_status != "not_required":
+            errors.append(f"{prefix}: non-required witness must have empty path and not_required review_status")
+        return errors
+
+    if not path_value or Path(path_value).is_absolute() or ".." in Path(path_value).parts:
+        errors.append(f"{prefix}.path must be a safe relative path when required")
+    else:
+        witness_path = (run_state_path.parent / path_value).resolve()
+        if not witness_path.is_file():
+            errors.append(f"{prefix}.path does not exist: {path_value}")
+        else:
+            errors.extend(f"{prefix}: {error}" for error in validate_state_witness(witness_path, True))
+            sealed_digest = str(value.get("sealed_digest") or "")
+            if sealed_digest and hashlib.sha256(witness_path.read_bytes()).hexdigest() != sealed_digest:
+                errors.append(f"{prefix}.sealed_digest does not match {path_value}")
+
+    if run_status in {"accepted", "handed_off"}:
+        if review_status != "pass":
+            errors.append(f"{prefix}.review_status must be pass before run status {run_status}")
+        if not str(value.get("reviewer_id") or "").strip():
+            errors.append(f"{prefix}.reviewer_id is required before run status {run_status}")
+        if observed_tier in VERIFICATION_TIERS and required_tier in VERIFICATION_TIERS:
+            if VERIFICATION_TIERS.index(observed_tier) < VERIFICATION_TIERS.index(required_tier):
+                errors.append(f"{prefix}.observed_tier must reach required_tier before run status {run_status}")
+    return errors
+
+
 def validate_acceptance_registry(path: Path) -> list[str]:
     errors: list[str] = []
     try:
@@ -623,6 +821,7 @@ def validate_acceptance_registry(path: Path) -> list[str]:
             "description",
             "status",
             "required_evidence",
+            "required_verification_tier",
             "pass_algorithm",
             "evidence",
             "owner",
@@ -654,6 +853,13 @@ def validate_acceptance_registry(path: Path) -> list[str]:
                 errors.append(f"{prefix}.evidence must not be empty for status 'scoped_out'")
         if "required_evidence" in item and not isinstance(item["required_evidence"], list):
             errors.append(f"{prefix}.required_evidence must be a list")
+        linked_tasks = item.get("linked_tasks")
+        if linked_tasks is not None and not isinstance(linked_tasks, list):
+            errors.append(f"{prefix}.linked_tasks must be a list")
+        if item.get("required_verification_tier") not in VERIFICATION_TIERS:
+            errors.append(
+                f"{prefix}.required_verification_tier must be one of {', '.join(VERIFICATION_TIERS)}"
+            )
         if "pass_algorithm" in item and not isinstance(item["pass_algorithm"], str):
             errors.append(f"{prefix}.pass_algorithm must be a string")
         if item.get("status") == "pass" and not str(item.get("pass_algorithm") or "").strip():
@@ -666,6 +872,12 @@ def validate_acceptance_registry(path: Path) -> list[str]:
                     active=item.get("status") == "pass",
                 )
             )
+            gate_mode = item["verification_gate"].get("mode") if isinstance(item["verification_gate"], dict) else ""
+            if item.get("status") == "pass" and gate_mode in {"strict_tdd", "test_first_evidence"}:
+                if not isinstance(linked_tasks, list) or not any(str(task_id).strip() for task_id in linked_tasks):
+                    errors.append(
+                        f"{prefix}.linked_tasks must bind a protected {gate_mode} criterion to at least one task"
+                    )
     return errors
 
 
@@ -684,7 +896,7 @@ def validate_run_state(path: Path) -> list[str]:
     if evidence_policy not in {None, EVIDENCE_POLICY}:
         errors.append(f"{path.name}: unsupported evidence_policy {evidence_policy!r}")
     routing_policy = data.get("routing_policy")
-    if routing_policy not in {None, MODEL_ROUTING_POLICY}:
+    if routing_policy not in (None, *MODEL_ROUTING_POLICIES):
         errors.append(f"{path.name}: unsupported routing_policy {routing_policy!r}")
     mode = data.get("mode", "full")
     if not isinstance(mode, str):
@@ -697,6 +909,17 @@ def validate_run_state(path: Path) -> list[str]:
         errors.append(f"{path.name}: status must be a string")
     elif data["status"] not in VALID_RUN_STATUSES:
         errors.append(f"{path.name}: unsupported status {data['status']!r}")
+    if "state_witness" not in data:
+        errors.append(f"{path.name}: missing state_witness")
+    else:
+        errors.extend(
+            validate_state_witness_record(
+                data["state_witness"],
+                f"{path.name}: state_witness",
+                path,
+                data.get("status"),
+            )
+        )
     if "state_layers" in data:
         state_layers = data["state_layers"]
         if isinstance(state_layers, dict):
@@ -705,6 +928,8 @@ def validate_run_state(path: Path) -> list[str]:
         errors.extend(validate_state_layers(state_layers, f"{path.name}: state_layers"))
     else:
         errors.append(f"{path.name}: missing state_layers")
+    if "continuation" in data:
+        errors.extend(validate_continuation(data["continuation"], f"{path.name}: continuation"))
 
     stages = data.get("stages")
     tasks = data.get("tasks")
@@ -792,7 +1017,7 @@ def validate_run_state(path: Path) -> list[str]:
             ):
                 if key not in item:
                     errors.append(f"{prefix} missing {key}")
-            if routing_policy == MODEL_ROUTING_POLICY:
+            if routing_policy in MODEL_ROUTING_POLICIES:
                 for key in (
                     "runtime", "profile", "requested_model", "resolved_model",
                     "reasoning_effort", "route_reason", "escalation_count",
@@ -818,7 +1043,7 @@ def validate_run_state(path: Path) -> list[str]:
                 not isinstance(escalation_count, int) or isinstance(escalation_count, bool) or escalation_count < 0
             ):
                 errors.append(f"{prefix}.escalation_count must be a non-negative integer")
-            if routing_policy == MODEL_ROUTING_POLICY:
+            if routing_policy in MODEL_ROUTING_POLICIES:
                 runtime = str(item.get("runtime") or "").strip()
                 if not runtime:
                     errors.append(f"{prefix}.runtime must not be empty")
@@ -826,13 +1051,15 @@ def validate_run_state(path: Path) -> list[str]:
                     errors.append(f"{prefix}.runtime must be lowercase")
                 if not str(item.get("route_reason") or "").strip():
                     errors.append(f"{prefix}.route_reason must not be empty")
-                if runtime.casefold() == "codex" and isinstance(profile, str) and profile in CODEX_MODEL_PROFILES:
-                    configured = CODEX_MODEL_PROFILES[profile]
+                sealed_profiles = model_profiles_for(runtime, routing_policy)
+                if sealed_profiles is not None and isinstance(profile, str) and profile in sealed_profiles:
+                    configured = sealed_profiles[profile]
+                    runtime_label = runtime.casefold()
                     if item.get("requested_model") != configured["model"]:
-                        errors.append(f"{prefix}.requested_model must match Codex profile {profile!r}")
+                        errors.append(f"{prefix}.requested_model must match {runtime_label} profile {profile!r}")
                     if item.get("reasoning_effort") != configured["reasoning_effort"]:
-                        errors.append(f"{prefix}.reasoning_effort must match Codex profile {profile!r}")
-                    if "terra" in str(item.get("resolved_model") or "").casefold():
+                        errors.append(f"{prefix}.reasoning_effort must match {runtime_label} profile {profile!r}")
+                    if runtime_label == "codex" and "terra" in str(item.get("resolved_model") or "").casefold():
                         errors.append(f"{prefix}.resolved_model must not use disabled Terra models")
             if not str(item.get("worker_id") or "").strip():
                 errors.append(f"{prefix}.worker_id must not be empty")
@@ -1028,8 +1255,11 @@ def main() -> int:
         elif result not in VALID_RESULTS:
             errors.append(f"Result must be one of {', '.join(sorted(VALID_RESULTS))}; got {result!r}")
         errors.extend(validate_evaluator_gate_section(markdown))
+        errors.extend(validate_label_section(markdown, "Production State Witness Checked", STATE_WITNESS_LABELS))
+        errors.extend(validate_label_section(markdown, "Verification Tier", VERIFICATION_TIER_LABELS))
     elif args.type == "subagent":
         errors.extend(validate_tdd_report_section(markdown))
+        errors.extend(validate_label_section(markdown, "Production State Witness", SUBAGENT_STATE_WITNESS_LABELS))
     elif args.type == "progress":
         errors.extend(validate_progress_snapshot(markdown, sections.get("Snapshot", "")))
     elif args.type == "lite_review":

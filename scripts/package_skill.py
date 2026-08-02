@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Create a clean runtime-only copy of the agent-reliability-harness skill."""
+"""Create a clean runtime-only copy of the agent-dispatch-harness skill."""
 
 from __future__ import annotations
 
 import argparse
 import filecmp
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -17,33 +18,45 @@ RUNTIME_FILES = [
     "agents/openai.yaml",
     "adapters/claude-code.md",
     "adapters/codex.md",
+    "adapters/grok.md",
     "adapters/universal.md",
     "references/closed-loop-pattern.md",
     "references/bugfix-lane.md",
     "references/eval_cases.md",
     "references/examples/fuzzy-goal-full-harness.md",
+    "references/examples/grok-fast-model-config.toml",
+    "references/examples/state-witness-example.md",
     "references/feature-spec-lane.md",
     "references/harness-protocol.md",
     "references/model-routing.md",
+    "references/portable-contract.md",
     "references/proportionality.md",
     "references/roles.md",
     "references/spec-synthesis.md",
     "references/state-memory-boundary.md",
     "references/stop-conditions.md",
+    "references/state-witness.md",
     "references/superpowers-integration.md",
     "references/tdd-gates.md",
-    "scripts/init_run.py",
     "scripts/harness_schema.py",
-    "scripts/harnessctl.py",
+    "scripts/init_run.py",
     "scripts/harness_test_run.py",
+    "scripts/harnessctl.py",
     "scripts/model_router.py",
+    "scripts/protocol_regression_harness.py",
+    "scripts/runtime_profiles.py",
     "scripts/runtime_state.py",
     "scripts/score_harness.py",
     "scripts/score_skill_protocol.py",
-    "scripts/validate_workspace.py",
+    "scripts/state_witness_check.py",
     "scripts/status.py",
     "scripts/tdd_gate_check.py",
+    "scripts/test_artifact_binding.py",
+    "scripts/test_lessons.py",
+    "scripts/test_model_routing.py",
+    "scripts/test_plan_native_portable.py",
     "scripts/validate_report.py",
+    "scripts/validate_workspace.py",
     "templates/acceptance_registry.json",
     "templates/capability_snapshot.md",
     "templates/evaluator_report.md",
@@ -51,11 +64,13 @@ RUNTIME_FILES = [
     "templates/lite_review.md",
     "templates/progress_ledger.md",
     "templates/run_state.json",
+    "templates/state_witness.md",
     "templates/subagent_report.md",
     "templates/subagent_task.md",
     "templates/task_spec.md",
     "templates/tdd_trace.jsonl",
     "templates/trace.jsonl",
+    "templates/worker_result.json",
 ]
 
 
@@ -141,13 +156,20 @@ def compare_dirs(expected: Path, actual: Path) -> list[str]:
         comparison = filecmp.dircmp(left, right)
         for name in comparison.left_only:
             differences.append(f"missing in install: {relative / name}")
+        ignored_generated = {"__pycache__"}
+        if relative == Path(""):
+            ignored_generated.update({"workspace", ".harness"})
         for name in comparison.right_only:
+            if name in ignored_generated:
+                continue
             differences.append(f"extra in install: {relative / name}")
         for name in comparison.diff_files:
             differences.append(f"modified in install: {relative / name}")
         for name in comparison.funny_files:
             differences.append(f"unreadable or incompatible: {relative / name}")
         for name in comparison.common_dirs:
+            if name == "__pycache__":
+                continue
             walk(left / name, right / name, relative / name)
 
     walk(expected, actual)
@@ -160,10 +182,10 @@ def check_install(source: Path, install_dir: Path) -> int:
     if not install_dir.is_dir():
         raise SystemExit(f"install directory does not exist: {install_dir}")
 
-    temp_output = Path("/tmp/agent-reliability-harness-package-check")
-    prepare_output(temp_output, force=True)
-    copy_runtime_files(source, temp_output)
-    differences = compare_dirs(temp_output, install_dir)
+    with tempfile.TemporaryDirectory(prefix="agent-dispatch-harness-package-check-") as temp:
+        temp_output = Path(temp)
+        copy_runtime_files(source, temp_output)
+        differences = compare_dirs(temp_output, install_dir)
     if differences:
         print(f"FAIL runtime install differs from source package: {install_dir}")
         for difference in differences:

@@ -23,7 +23,7 @@ VERSION_PATTERNS = {
     ),
     "SKILL.md": (
         (
-            re.compile(r"^\*Agent Reliability Harness v[^|]+ \| [^*]+\*$", re.MULTILINE),
+            re.compile(r"^\*Agent (?:Dispatch|Reliability) Harness v[^|]+ \| [^*]+\*$", re.MULTILINE),
             "*Agent Reliability Harness v{version} | {date}*",
         ),
     ),
@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         default=Path(__file__).resolve().parents[1],
         help="Repository root. Defaults to the parent of scripts/.",
     )
-    parser.add_argument("--date", default="2026-07-14", help="Release date to write with --fix.")
+    parser.add_argument("--date", default="2026-08-02", help="Release date to write with --fix.")
     parser.add_argument("--fix", action="store_true", help="Rewrite current-version references.")
     return parser.parse_args()
 

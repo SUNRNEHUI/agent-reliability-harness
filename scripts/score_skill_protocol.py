@@ -88,6 +88,67 @@ CHECKS = [
         "desc": "improvement tasks require measurement guidance",
     },
     {
+        "id": "state_witness_reference",
+        "weight": 8,
+        "paths": ["references/state-witness.md", "SKILL.md", "templates/state_witness.md"],
+        "patterns": [
+            r"Production State Witness",
+            r"Actual call chain",
+            r"preserved",
+            r"user-visible|user_visible",
+        ],
+        "desc": "stateful work has a concrete production-state witness contract",
+    },
+    {
+        "id": "state_witness_checker",
+        "weight": 10,
+        "paths": ["scripts/state_witness_check.py"],
+        "patterns": [
+            r"source locator",
+            r"observed before",
+            r"expected after",
+            r"same production state",
+            r"contains_locator",
+        ],
+        "desc": "witness checker enforces semantic minimums instead of heading presence",
+    },
+    {
+        "id": "state_witness_runtime_gate",
+        "weight": 12,
+        "paths": ["scripts/harnessctl.py", "scripts/validate_report.py", "scripts/init_run.py"],
+        "patterns": [
+            r"state_witness_gate",
+            r"witness-set",
+            r"sealed_digest",
+            r"validate_state_witness_record",
+            r"required-verification-tier|required_verification_tier",
+        ],
+        "desc": "runtime controller blocks seal, dispatch, and protected acceptance without reviewed witness evidence",
+    },
+    {
+        "id": "state_witness_report_contract",
+        "weight": 6,
+        "paths": ["templates/evaluator_report.md", "templates/subagent_report.md", "templates/subagent_task.md", "templates/lite_plan.md"],
+        "patterns": [
+            r"Production State Witness",
+            r"Adversarial",
+            r"verification tier|Verification Tier",
+        ],
+        "desc": "worker, evaluator, and Lite contracts carry witness and independent-review slots",
+    },
+    {
+        "id": "state_witness_eval_cases",
+        "weight": 6,
+        "paths": ["references/eval_cases.md"],
+        "patterns": [
+            r"Stateful UI Policy Test",
+            r"actual rendered-RAW state",
+            r"preserved import",
+            r"policy-only PASS",
+        ],
+        "desc": "pressure cases test reachable state combinations and reject policy-only closure",
+    },
+    {
         "id": "doc_priority",
         "weight": 4,
         "paths": ["references/spec-synthesis.md", "SKILL.md"],
@@ -107,6 +168,18 @@ CHECKS = [
         "paths": ["scripts/score_harness.py", "scripts/score_skill_protocol.py"],
         "patterns": [r"."],
         "desc": "scoring scripts present",
+    },
+    {
+        "id": "behavioral_regression_harness",
+        "weight": 10,
+        "paths": ["scripts/protocol_regression_harness.py", "SKILL.md", "references/eval_cases.md"],
+        "patterns": [
+            r"protocol_regression",
+            r"gate.downgrade|conflicting gate",
+            r"RED/GAP|gap.*precede",
+            r"wrapper provenance|require-wrapper",
+        ],
+        "desc": "dynamic adversarial harness covers chronology, downgrade, and provenance boundaries",
     },
 ]
 

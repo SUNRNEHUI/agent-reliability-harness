@@ -1,48 +1,54 @@
 # Universal Runtime Adapter
 
-This skill is **model- and product-agnostic**. Same protocol on Codex, Claude, Grok, or others.
+Use this floor for any model that can read project files. Shell, browser, native Plan,
+subagents, and per-worker model selection are optional capabilities.
 
-## Shared assumptions
+## Native First
 
-The agent can:
+Use the runtime's own planning and task tracking while one active session can finish and
+verify the work. Do not serialize a second plan merely because the runtime has a plan UI.
 
-1. Read/write project files  
-2. Run shell commands (tests, linters, scripts)  
-3. Optionally spawn sub-agents / parallel workers  
-4. Optionally use browser or MCP tools  
+Materialize Portable state only when work must survive a session/model boundary, a long
+wait, or multiple workers. Escalate to Audited controls only when consequences or
+fake-completion risk justify them.
 
-If a capability is missing: **narrow scope, sequential stages, or ask** — never invent parallel results.
+## Capability Negotiation
 
-Runtime detection should prefer an explicit launcher/adaptor identity, then verified active
-capabilities. The presence of an installed `codex`, `claude`, or `grok` executable does not
-prove that runtime owns the current session.
+Portable contracts name required and optional capabilities, not providers or models.
 
-Portable route names are `fast`, `main`, `planner`, and `critical_reviewer`. Their concrete
-models belong to the runtime adapter. If per-worker model selection is unavailable, record
-the requested profile and the fallback; do not claim the requested model was used.
+- Missing optional capability: choose a documented sequential or manual fallback.
+- Missing required capability: stop with the exact capability gap.
+- No native subagents: execute bounded stages sequentially; never label them parallel.
+- No shell: the agent may read the capsule, but must not claim script validation or owner
+  mutation occurred.
 
-## Mapping common tools
+Runtime identity comes from the active launcher or verified capabilities. An installed
+executable does not prove it owns the session.
 
-| Need | Codex-ish | Claude-ish | Grok-ish / generic |
-|------|-----------|------------|--------------------|
-| Sub-agents | native multi-agent / Task | Task / subagents | Task / sequential fallback |
-| Worktree | `git worktree` | worktree / isolation | `git worktree` if git repo |
-| Project rules | `AGENTS.md` | `CLAUDE.md` / rules | any project instruction files |
-| Verify | shell + tests | shell + hooks | shell + tests |
+## Portable Continuation
 
-## Protocol stability
+The replacement runtime runs `harnessctl.py resume` from the project root. It reads the
+returned capsule, reconciles workspace drift, satisfies `must_read`, and loads
+`read_if_needed` only for a concrete gap. Every writer uses the current owner epoch.
 
-Always keep:
+The contract transfers observable state. It cannot transfer hidden reasoning, provider
+session state, secrets, or an in-flight external side effect.
 
-- Density decision (Direct / Lite / Full)
-- Spec Synthesis when fuzzy or fake-success-prone
-- Evidence before done
-- Four-line worker return
-- Stop conditions
+## Workers
 
-Do **not** require a specific brand of “agent framework” to follow this skill.
+Delegate only independent responsibility surfaces. Prompts include goal, allowed scope,
+constraints, outputs, evidence, and stop rules. Workers return
+`templates/worker_result.json`. The manager owns merge and final acceptance.
 
-## Token tip
+## Stable Core
 
-Load `SKILL.md` first. Load at most **one** of `references/*` or `adapters/*` per decision point.
-Product-specific adapters (`codex.md`, `claude-code.md`) only when that runtime’s quirks block you.
+Always preserve:
+
+- outcome and observable `done_when`;
+- constraints and approval boundaries;
+- one literal next action;
+- evidence paths and digests;
+- workspace drift and owner fencing;
+- explicit blockers and stop conditions.
+
+Load provider adapters only when a provider-specific capability changes execution.

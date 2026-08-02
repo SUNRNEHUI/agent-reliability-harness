@@ -34,6 +34,12 @@ reference the generated trace. Hand-written trace events are lower-trust
 evidence and should be treated as advisory unless corroborated by command
 output, filesystem state, or an external runner.
 
+The selected gate is immutable for one trace: adding a later, looser
+`gate_decision` does not replace the original decision. RED or GAP evidence must
+precede the first implementation `file_modified` event, and GREEN must follow
+it. A GAP recorded after implementation is tests-after evidence, not test-first
+evidence.
+
 ## Gate Levels
 
 The dispatcher uses two separate gates. Do not collapse them into a generic "tested" claim.
@@ -84,6 +90,22 @@ later GREEN/REFACTOR/verification PASS. Use this only for files that belong to
 the current TDD cycle; old untouched source files should not be passed as
 cycle evidence.
 
+For protected Full acceptance, require wrapper provenance explicitly:
+
+```bash
+python3 scripts/tdd_gate_check.py --require-wrapper <artifact-dir>/tdd_trace.jsonl
+```
+
+`harnessctl validate` applies this protected check automatically when a passed
+task or criterion uses `strict_tdd` or `test_first_evidence`. The marker reduces
+accidental hand-written evidence; it is not a cryptographic signature, so the
+manager must still re-run the critical command.
+
+For traces shared by multiple implementation tasks, pass `--task-id` to inspect
+one task's evidence. The Full controller performs this scoping automatically;
+without it, a global RED/GREEN pair could accidentally combine different task
+lifecycles.
+
 For bug fixes, strict TDD is the default whenever a focused failing test or
 reproduction can be created at reasonable cost. A bugfix report must not claim
 the defect is fixed without failure evidence that predates the fix. If the bug
@@ -132,6 +154,8 @@ python3 scripts/harness_test_run.py \
   --reason "bugfix requires RED before implementation" \
   --phase RED \
   --run-state <artifact-dir>/run_state.json \
+  --actor-id <continuation-owner-if-claimed> \
+  --owner-epoch <continuation-epoch-if-claimed> \
   -- pytest path/to/test.py
 ```
 
@@ -141,6 +165,11 @@ exit code, stdout/stderr tails, retry count, and trace path. This current cycle
 context is the lightweight failure scene to pass between manager and workers;
 do not move entire workspace telemetry between agents when the failure scene is
 enough.
+
+For Full mode, the context update uses the same artifact lock and before/after digest journal
+as `harnessctl`; it must not invalidate a sealed run. Once continuation ownership is active,
+the wrapper checks actor ID and owner epoch before executing the command and again before
+committing context. Omit these flags only while the continuation is still unclaimed.
 
 For substitute checks, pass `--no-test-reason` so the trace records why a
 test-first path was not used.

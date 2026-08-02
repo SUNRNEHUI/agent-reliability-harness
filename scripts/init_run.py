@@ -11,7 +11,13 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
-from harness_schema import EVIDENCE_POLICY, MODEL_ROUTING_POLICY, SCHEMA_VERSION
+from harness_schema import (
+    CONTINUATION_PROTOCOL,
+    EVIDENCE_POLICY,
+    MODEL_ROUTING_POLICY,
+    SCHEMA_VERSION,
+    VERIFICATION_TIERS,
+)
 
 
 TEMPLATE_MAP = {
@@ -100,7 +106,80 @@ def default_tdd_cycle_context() -> dict[str, object]:
     }
 
 
-def default_state_layers(mode: str = "full") -> dict[str, object]:
+def default_state_witness(required: bool, tier: str) -> dict[str, object]:
+    return {
+        "required": required,
+        "path": "state_witness.md" if required else "",
+        "required_tier": tier if required else "policy",
+        "observed_tier": "",
+        "review_status": "pending" if required else "not_required",
+        "reviewer_id": "",
+        "review_evidence": [],
+        "sealed_digest": "",
+        "reviewed_at": "",
+    }
+
+
+def default_continuation(
+    tasks: list[dict[str, object]],
+    *,
+    project_root: Path,
+    created_at: str,
+) -> dict[str, object]:
+    first = next(
+        (task for task in tasks if task.get("status") in {"ready", "planned"}),
+        None,
+    )
+    task_id = str(first.get("id") or "") if first else ""
+    task_name = str(first.get("name") or "") if first else ""
+    task_path = str(first.get("task_path") or "") if first else ""
+    next_action = (
+        f"Read {task_path} and complete task {task_id}: {task_name}"
+        if task_id and task_path
+        else "Inspect task_spec.md and define the next ready task"
+    )
+    return {
+        "protocol": CONTINUATION_PROTOCOL,
+        "status": "unclaimed",
+        "owner": {
+            "actor_id": "",
+            "runtime": "",
+            "epoch": 0,
+            "claimed_at": "",
+        },
+        "previous_owner": {},
+        "takeover_count": 0,
+        "checkpoint": {
+            "id": "",
+            "sequence": 0,
+            "checkpointed_at": created_at,
+            "actor_id": "",
+            "runtime": "",
+            "reason": "run initialized",
+            "current_task": task_id,
+            "next_action": next_action,
+            "pending_verification": [],
+            "repository": {
+                "root": str(project_root),
+                "cwd": str(project_root),
+                "branch": "",
+                "head": "",
+                "dirty_paths": [],
+                "dirty_entries": {},
+                "worktree_digest": "",
+            },
+        },
+        "last_resume": {
+            "resumed_at": "",
+            "actor_id": "",
+            "runtime": "",
+            "takeover_reason": "",
+            "forced": False,
+        },
+    }
+
+
+def default_state_layers(mode: str = "full", state_witness_required: bool = False) -> dict[str, object]:
     if mode == "lite":
         return {
             "working_state": {
@@ -116,6 +195,17 @@ def default_state_layers(mode: str = "full") -> dict[str, object]:
             },
         }
 
+    artifact_paths = {
+        "task_spec": "task_spec.md",
+        "progress": "progress.md",
+        "acceptance_registry": "acceptance_registry.json",
+        "trace": "trace.jsonl",
+        "tdd_trace": "tdd_trace.jsonl",
+        "lessons": "lessons.jsonl",
+    }
+    if state_witness_required:
+        artifact_paths["state_witness"] = "state_witness.md"
+
     return {
         "working_state": {
             "current_stage": "1",
@@ -127,13 +217,7 @@ def default_state_layers(mode: str = "full") -> dict[str, object]:
         "session_state": {
             "shared_decisions": [],
             "shared_assumptions": [],
-            "artifact_paths": {
-                "task_spec": "task_spec.md",
-                "progress": "progress.md",
-                "acceptance_registry": "acceptance_registry.json",
-                "trace": "trace.jsonl",
-                "tdd_trace": "tdd_trace.jsonl",
-            },
+            "artifact_paths": artifact_paths,
             "delegation_state": [],
         },
         "execution_log": {
@@ -155,18 +239,42 @@ def main() -> int:
     parser.add_argument("--slug", help="Stable task slug. Derived from --title when omitted.")
     parser.add_argument("--title", default="multi-agent-task", help="Human-readable task title.")
     parser.add_argument("--agents", default="", help="Comma-separated agent task names, e.g. frontend,backend,tests.")
-    parser.add_argument("--mode", choices=("direct", "lite", "full"), default="full", help="Artifact mode to initialize.")
+    parser.add_argument(
+        "--mode",
+        choices=("native", "portable", "audited", "direct", "lite", "full"),
+        default="audited",
+        help="Artifact mode. direct/lite/full remain legacy aliases; use harnessctl materialize for Portable.",
+    )
     parser.add_argument(
         "--with-synthesis",
         action="store_true",
         help="Seed Spec Synthesis checklist, stage 0.1 task, and ALIGNMENT.md (full mode only).",
     )
+    parser.add_argument(
+        "--with-state-witness",
+        action="store_true",
+        help="Require a Production State Witness before dispatch and protected acceptance.",
+    )
+    parser.add_argument(
+        "--required-verification-tier",
+        choices=VERIFICATION_TIERS,
+        default="flow",
+        help="Minimum evidence tier required for a stateful run.",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated files.")
     args = parser.parse_args()
 
-    if args.mode == "direct":
-        print("Direct mode does not need orchestration artifacts.")
+    if args.mode in {"native", "direct"}:
+        print("Native mode uses the runtime plan and does not need harness artifacts.")
         return 0
+
+    if args.mode == "portable":
+        raise SystemExit(
+            "Portable mode requires an approved plan; use harnessctl.py materialize with goal, done_when, and next_action."
+        )
+
+    if args.mode == "audited":
+        args.mode = "full"
 
     if args.with_synthesis and args.mode != "full":
         raise SystemExit("--with-synthesis is only valid with --mode full")
@@ -179,7 +287,9 @@ def main() -> int:
     created = []
     skipped = []
 
-    template_map = LITE_TEMPLATE_MAP if args.mode == "lite" else TEMPLATE_MAP
+    template_map = dict(LITE_TEMPLATE_MAP if args.mode == "lite" else TEMPLATE_MAP)
+    if args.with_state_witness:
+        template_map["state_witness.md"] = "state_witness.md"
     for template_name, output_name in template_map.items():
         output_path = artifact_dir / output_name
         if copy_template(template_dir, template_name, output_path, args.force):
@@ -322,10 +432,13 @@ def main() -> int:
             "acceptance_registry.json",
             "trace.jsonl",
             "tdd_trace.jsonl",
+            "lessons.jsonl",
             "run_state.json",
         ]
         if args.with_synthesis:
             generated_files.append("ALIGNMENT.md")
+    if args.with_state_witness:
+        generated_files.append("state_witness.md")
     generated_files.extend(item["task_path"] for item in task_items if item.get("task_path"))
 
     current_stage = "0" if args.with_synthesis else ("1" if impl_tasks else "")
@@ -340,6 +453,9 @@ def main() -> int:
                 "mode": "lite",
                 "artifact_dir": str(artifact_dir),
                 "state_layers": default_state_layers(mode="lite"),
+                "state_witness": default_state_witness(True, args.required_verification_tier)
+                if args.with_state_witness
+                else default_state_witness(False, args.required_verification_tier),
                 "status": "intake",
                 "current_stage": "1" if impl_tasks else "",
                 "stages": stage_items,
@@ -349,7 +465,10 @@ def main() -> int:
             },
         }
     else:
-        full_state_layers = default_state_layers(mode="full")
+        full_state_layers = default_state_layers(
+            mode="full",
+            state_witness_required=args.with_state_witness,
+        )
         if args.with_synthesis:
             full_state_layers["working_state"]["current_stage"] = "0"
             full_state_layers["session_state"]["document_priority"] = [
@@ -392,6 +511,9 @@ def main() -> int:
                         "description": "",
                         "status": "pending",
                         "required_evidence": [],
+                        "required_verification_tier": args.required_verification_tier
+                        if args.with_state_witness
+                        else "policy",
                         "pass_algorithm": "",
                         "evidence": [],
                         "owner": "main-agent",
@@ -414,6 +536,7 @@ def main() -> int:
             )
             + "\n",
             "tdd_trace.jsonl": "",
+            "lessons.jsonl": "",
             "run_state.json": {
                 "version": SCHEMA_VERSION,
                 "evidence_policy": EVIDENCE_POLICY,
@@ -426,6 +549,15 @@ def main() -> int:
                 "trace_path": "trace.jsonl",
                 "tdd_trace_path": "tdd_trace.jsonl",
                 "state_layers": full_state_layers,
+                "continuation": default_continuation(
+                    task_items,
+                    project_root=project_root,
+                    created_at=now,
+                ),
+                "state_witness": default_state_witness(
+                    args.with_state_witness,
+                    args.required_verification_tier,
+                ),
                 "tdd_current_cycle_context": default_tdd_cycle_context(),
                 "status": "intake",
                 "current_stage": current_stage,

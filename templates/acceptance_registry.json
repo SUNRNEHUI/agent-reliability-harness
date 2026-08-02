@@ -13,6 +13,7 @@
       "success_criteria": [],
       "status": "pending",
       "required_evidence": [],
+      "required_verification_tier": "policy",
       "pass_algorithm": "",
       "evidence": [],
       "owner": "manager",

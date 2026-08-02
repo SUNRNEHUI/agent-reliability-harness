@@ -9,6 +9,8 @@ Stop and ask for a decision, narrow the scope, or create a new stage when any co
 - A required dependency, credential, environment, or external service is unavailable.
 - The agent is about to revert or overwrite changes it did not make.
 - Verification has failed twice for the same stage without a new diagnosis.
+- Two consecutive cycles produced no new evidence, artifact change, test result, or binding
+  decision.
 
 ## Multi-Agent Stops
 
@@ -34,4 +36,12 @@ Stop and ask for a decision, narrow the scope, or create a new stage when any co
 - The current stage is consuming too much context, time, tool calls, or external cost relative to the spec.
 - Continuing would make the task harder to resume because state has not been written down.
 
-When stopping, leave a concise handoff: current state, evidence, blocker, options, recommendation, and the exact decision needed.
+## Stall Stop Packet
+
+For a reasoning stall, record facts, assumptions, the current hypothesis, the falsifying
+experiment already attempted, and whether any new evidence appeared. Do not increase effort
+or repeat the same route. Use one fresh bounded diagnosis only when the packet identifies a
+genuinely different question.
+
+When stopping, leave a concise handoff: current state, evidence, blocker, options,
+recommendation, and the exact decision needed.

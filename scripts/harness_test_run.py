@@ -9,14 +9,29 @@ import math
 import shlex
 import subprocess
 import sys
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 try:
-    from runtime_state import append_jsonl, atomic_write_json, mutate_json
+    from harnessctl import (
+        commit_transition,
+        ensure_trace_structure_integrity,
+        require_current_owner,
+        validate_candidate,
+    )
+    from runtime_state import append_jsonl, locked, mutate_json
+    from validate_report import validate_run_state
 except ImportError:  # pragma: no cover - supports `import scripts.harness_test_run`
-    from .runtime_state import append_jsonl, atomic_write_json, mutate_json
+    from .harnessctl import (
+        commit_transition,
+        ensure_trace_structure_integrity,
+        require_current_owner,
+        validate_candidate,
+    )
+    from .runtime_state import append_jsonl, locked, mutate_json
+    from .validate_report import validate_run_state
 
 
 WRAPPER_VERSION = 1
@@ -62,9 +77,43 @@ def update_run_state(
     trace_path: Path,
     stdout_tail: str,
     stderr_tail: str,
+    summary: str = "",
     timeout_seconds: float | None = None,
+    actor_id: str = "",
+    owner_epoch: int | None = None,
 ) -> None:
     now = utc_now()
+
+    def apply_gate_event(data: dict[str, Any]) -> None:
+        tasks = data.get("tasks")
+        if not isinstance(tasks, list):
+            return
+        task = next(
+            (item for item in tasks if isinstance(item, dict) and item.get("id") == task_id),
+            None,
+        )
+        if not isinstance(task, dict) or not isinstance(task.get("verification_gate"), dict):
+            return
+        gate = task["verification_gate"]
+        mode = gate_mode or str(gate.get("mode") or "")
+        if mode:
+            gate["mode"] = mode
+        gate["tdd_trace_path"] = (
+            "tdd_trace.jsonl" if trace_path.name == "tdd_trace.jsonl" else str(trace_path)
+        )
+        phase_key = phase.strip().upper()
+        if phase_key == "RED":
+            gate["red_command"] = command
+            gate["red_result"] = result
+            gate["red_failure_reason"] = (
+                summary.strip() or stderr_tail.strip() or stdout_tail.strip() or f"exit code {exit_code}"
+            )
+        elif phase_key == "GREEN":
+            gate["green_command"] = command
+            gate["green_result"] = result
+        elif phase_key == "REFACTOR":
+            gate["refactor_check"] = f"{command} -> {result}"
+
     def mutate(data: dict[str, Any]) -> dict[str, Any]:
         prior_context = data.get("tdd_current_cycle_context")
         retry_count = prior_context.get("retry_count", 0) if isinstance(prior_context, dict) and prior_context.get("task_id") == task_id else 0
@@ -77,10 +126,37 @@ def update_run_state(
                    "stderr_tail": stderr_tail, "retry_count": retry_count,
                    "max_retries": prior_context.get("max_retries", 3) if isinstance(prior_context, dict) else 3, "updated_at": now}
         if timeout_seconds is not None: context["timeout_seconds"] = timeout_seconds
+        apply_gate_event(data)
         data["updated_at"] = now
         data["tdd_current_cycle_context"] = context
         return data
-    mutate_json(run_state_path, mutate, writer_role="manager", scope="global")
+
+    artifact_dir = run_state_path.expanduser().resolve().parent
+    with locked(artifact_dir / ".harnessctl"):
+        state = read_json(run_state_path)
+        if state.get("mode") != "full":
+            mutate_json(run_state_path, mutate, writer_role="manager", scope="global")
+            return
+        ensure_trace_structure_integrity(artifact_dir)
+        original_state = deepcopy(state)
+        require_current_owner(state, actor_id, owner_epoch)
+        state = mutate(state)
+        validate_candidate(artifact_dir, "run_state.json", state, validate_run_state)
+        commit_transition(
+            artifact_dir,
+            run_state_path,
+            original_state,
+            state,
+            {
+                "event": "tdd_context_update",
+                "task_id": task_id,
+                "gate_mode": gate_mode,
+                "phase": phase,
+                "result": result,
+                "exit_code": exit_code,
+                "actor_id": actor_id,
+            },
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,6 +171,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--summary", default="", help="Optional human summary for the test_run event.")
     parser.add_argument("--cwd", type=Path, help="Working directory for the command.")
     parser.add_argument("--run-state", type=Path, help="Optional run_state.json to update with current TDD context.")
+    parser.add_argument("--actor-id", default="", help="Current continuation owner actor ID, when claimed.")
+    parser.add_argument("--owner-epoch", type=int, help="Current continuation owner epoch, when claimed.")
     parser.add_argument("--no-test-reason", default="", help="Reason used when recording substitute verification.")
     parser.add_argument("--timeout-seconds", "--timeout", dest="timeout_seconds", type=float)
     parser.add_argument("--runtime-budget-seconds", type=float)
@@ -122,6 +200,8 @@ def main() -> int:
     if args.run_state:
         try:
             state = json.loads(args.run_state.expanduser().read_text(encoding="utf-8"))
+            if isinstance(state, dict):
+                require_current_owner(state, args.actor_id, args.owner_epoch)
             raw_tasks = state.get("tasks", []) if isinstance(state, dict) else []
             tasks = raw_tasks if isinstance(raw_tasks, list) else []
             task = next((item for item in tasks if isinstance(item, dict) and item.get("id") == args.task_id), None)
@@ -206,7 +286,9 @@ def main() -> int:
             update_run_state(args.run_state.expanduser(), task_id=args.task_id, gate_mode=args.gate_mode, phase=args.phase,
                              command=command_text, result=result, exit_code=return_code, trace_path=trace_path,
                              stdout_tail=stdout_tail, stderr_tail=stderr_tail,
-                             timeout_seconds=args.timeout_seconds if timed_out else None)
+                             summary=args.summary,
+                             timeout_seconds=args.timeout_seconds if timed_out else None,
+                             actor_id=args.actor_id, owner_epoch=args.owner_epoch)
         except Exception as exc:
             append_event(trace_path, {"ts": utc_now(), "event": "state_update_failed", "task_id": args.task_id,
                                       "result": "ERROR", "error": str(exc), "source": "harness_test_run", "wrapper_version": WRAPPER_VERSION})

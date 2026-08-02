@@ -1,12 +1,16 @@
 # Harness Protocol Reference
 
-This reference defines the v6.3 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, evidence, budget, and final acceptance.
+This reference defines Audited controls and legacy `handoff-v1` Full compatibility. New
+cross-session or cross-model work should start with Portable Contract v2; load this file
+only when typed receipts, protected TDD chronology, a Production State Witness, evaluator
+separation, or legacy artifact recovery is required.
 
 ## Protocol Goal
 
-The harness turns multi-agent orchestration from advice into a required control loop:
+After Native / Portable / Audited selection chooses Audited or opens a legacy Full run,
+the harness turns coordination from advice into a required control loop:
 
-1. choose Direct, Lite, or Full mode
+1. confirm the Audited trigger or legacy `handoff-v1` artifact
 2. when the goal is fuzzy or false-completion risk is high, run Spec Synthesis before implementation dispatch
 3. discover actual runtime capabilities
 4. create a bounded spec and acceptance registry with pass algorithms
@@ -17,46 +21,27 @@ The harness turns multi-agent orchestration from advice into a required control 
 
 Spec Synthesis details: `references/spec-synthesis.md`. Harness instance quality can be scored with `scripts/score_harness.py` (harness quality ≠ product success).
 
-## Mode Selection Gate
+## Audited Entry Gate
 
-Explicit multi-agent wording authorizes the manager to evaluate the mode. It does not require dispatch.
+Load this protocol only after the core router selected Audited, or when opening an existing
+legacy Full artifact. Audited is justified by controls such as typed acceptance receipts,
+a Production State Witness, protected TDD chronology, evaluator separation, disputed
+ownership, stronger rollback, or release/production risk.
 
-The manager should skip multi-agent orchestration when the task is small, localized, lacks clean ownership boundaries, or would cost more to coordinate than to complete directly. In that case, the manager should say so briefly, execute as a single agent, and verify normally without creating run artifacts.
+Multi-agent wording, task size, or a long native Plan does not independently trigger this
+protocol. Parallelism remains an execution choice. Cross-session durability without an
+audit trigger belongs in Portable v2.
 
-The manager should proceed with Lite Orchestration or Full Harness when delegation materially helps because the work is parallelizable, long, resumable, risky, evaluator-sensitive, or benefits from isolated ownership and rollback.
+## Legacy Full Mapping
 
-Other planning, TDD, worktree, review, verification, or parallel-agent methods are supporting methods after this gate. They do not replace mode selection.
-
-## Operating Modes
-
-Choose the thinnest mode that still protects the work.
-
-### Direct Mode
-
-Use Direct mode for small edits, narrow fixes, simple questions, direct commands, and ordinary single-agent work. The manager does the work directly, verifies normally, and does not create harness artifacts, worker reports, trace files, or registries.
-
-### Lite Orchestration
-
-Use Lite Orchestration for medium tasks where decomposition helps but the cost of a full harness would dominate the work. Lite mode may use a short plan, bounded worker or stage reports, and only the acceptance evidence needed for the task. It should not create the full artifact set by default.
-
-Lite mode is appropriate when:
-
-- the task has two or more bounded surfaces, but is not long-running or high-risk
-- the user asked for coordination, but resumability is not important
-- a worker-style split helps review without needing durable machine-readable state
-- verification can be captured in a small command summary, diff review, screenshot, or report
-
-Lite mode may borrow test-first evidence, strict TDD, compact review, or parallel-agent discipline when useful, but it should not expand into full ceremony without a Full Harness trigger.
-
-### Full Harness
-
-Use Full Harness only when the work is long, risky, resumable, multi-stage, evaluator-sensitive, likely to need rollback, or explicitly requires durable coordination across agents or sessions.
-
-Full Harness is the only mode that requires the complete record set below. If a task does not need resumable state, acceptance registry blocking, budget breakers, and trace continuity, prefer Direct or Lite mode.
+Existing Full artifacts keep their original `mode: full`, state machine, acceptance
+registry, and trace semantics. Historical Direct and Lite paths did not require this record
+set and should not be initialized for new work. In v8 terminology, this complete record set
+is the Audited compatibility format.
 
 ## Required Records
 
-Required records are mandatory only for Full Harness runs. Direct mode creates none. Lite Orchestration may keep only a short plan, worker report, and necessary acceptance evidence.
+Required records are mandatory only for Audited or legacy Full runs.
 
 A Full Harness run should preserve these records in durable files when the task is complex or resumable.
 
@@ -87,6 +72,22 @@ missing version is an integrity failure, not a hint to guess a migration.
 - evidence path
 - next action
 
+### Continuation Record
+
+The additive `continuation` record is independent of the top-level run lifecycle. A
+mid-run runtime switch does not move the run to terminal `HANDED_OFF`.
+
+- protocol and status: `unclaimed`, `active`, or `ready`;
+- current owner actor ID, runtime, monotonically increasing epoch, and claim time;
+- previous owner and takeover count;
+- latest checkpoint ID/sequence, current task, literal next action, pending verification,
+  and repository snapshot;
+- last resume actor/runtime/reason and whether the takeover was forced.
+
+The owner epoch is a fencing token, not metadata. Once a run is claimed, all state-changing
+controller calls must match both actor ID and epoch. A later session may reuse an actor name,
+but a stale process holding an earlier epoch still cannot write.
+
 ### Model Route Record
 
 - runtime identity established by the active adapter, not executable discovery alone
@@ -100,6 +101,21 @@ Density selection happens first. A cheap model is not a reason to dispatch, and 
 model is not evidence that the runtime resolved it. Runtime-specific mappings live in
 `references/model-routing.md` and the matching adapter.
 
+### Production State Witness Record
+
+For state/UI/async/concurrency behavior, Full Harness must retain a `state_witness.md`
+record before implementation. It contains:
+
+- symptom and terminal user-facing condition;
+- exact production call chain and decision function;
+- state inputs with their producers and lifecycle;
+- truth table for failing, fixed, and preserved-blocking combinations;
+- executable test/fixture mapping for critical rows;
+- unknowns, logging added, and verification tier reached.
+
+The manager must run an adversarial call-site review after GREEN. A missing or unreachable
+row is a review FAIL and requires a new TDD cycle; it cannot be waived by a passing unit test.
+
 ### Acceptance Record
 
 - criterion
@@ -110,6 +126,7 @@ model is not evidence that the runtime resolved it. Runtime-specific mappings li
 - verification gate mode: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`
 - RED/GREEN evidence or substitute verification evidence for code behavior changes when applicable
 - spec compliance or code quality review evidence when required by risk
+- production-state witness and adversarial review evidence when stateful behavior is in scope
 - evaluator notes when relevant
 
 ### Testing Gate Record
@@ -117,7 +134,7 @@ model is not evidence that the runtime resolved it. Runtime-specific mappings li
 For every implementation task, record the selected gate mode:
 
 - `strict_tdd`: required when the user, project instructions, phase gate, or task assignment explicitly requires TDD. Requires RED command/result/failure reason before production code, GREEN command/result after implementation, and a refactor check after cleanup.
-- `test_first_evidence`: default for Lite or Full code behavior changes when meaningful tests exist or can be added at reasonable cost. Requires failing or gap-revealing evidence before implementation and passing verification after.
+- `test_first_evidence`: default for Audited or legacy Full code behavior changes when meaningful tests exist or can be added at reasonable cost. Requires failing or gap-revealing evidence before implementation and passing verification after.
 - `substitute`: allowed only when meaningful test-first evidence is unavailable or disproportionate. Requires no-test reason and substitute check.
 - `not_applicable`: allowed only for docs-only, config-only, analysis-only, or non-behavior work.
 
@@ -150,6 +167,10 @@ After `init_run.py --mode full`, use the narrow control surface instead of hand-
 run, task, or acceptance statuses:
 
 ```bash
+python3 <skill-dir>/scripts/harnessctl.py discover <project-root>
+python3 <skill-dir>/scripts/harnessctl.py resume <project-root> --runtime grok --actor-id <unique-session-id> --takeover-reason "previous runtime interrupted"
+python3 <skill-dir>/scripts/harnessctl.py checkpoint <project-root> --runtime grok --actor-id <actor> --owner-epoch <epoch> --current-task 1.1 --next-action "run focused tests" --reason "verified boundary"
+python3 <skill-dir>/scripts/harnessctl.py handoff <project-root> --actor-id <actor> --owner-epoch <epoch> --next-action "run focused tests" --reason "clean runtime switch"
 python3 <skill-dir>/scripts/harnessctl.py validate <artifact-dir>
 python3 <skill-dir>/scripts/harnessctl.py seal <artifact-dir> --reason "reviewed synthesis baseline"
 python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> --worker-id <runtime-worker-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md --runtime codex --profile main --requested-model gpt-5.6-luna --reasoning-effort xhigh --route-reason "default high-frequency manager"
@@ -166,6 +187,21 @@ python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status accept
 python3 <skill-dir>/scripts/harnessctl.py recover <artifact-dir>
 ```
 
+`resume` is the replacement runtime entry gate. From a project root it discovers exactly
+one non-terminal Full run, takes a coordination lock, recovers incomplete journal entries,
+validates all canonical state and evidence chains, then commits a new owner epoch and emits
+a resume packet. Zero active runs, multiple active runs, corrupt state, or failed recovery
+leaves ownership unchanged. Terminal runs are never auto-selected.
+
+The packet includes artifact/project paths, active tasks, blockers, required reads, recorded
+next action, pending verification, current/previous owner, and repository drift. A content
+fingerprint distinguishes pre-existing dirty work from changes made after checkpoint. The
+harness-owned `workspace/**` artifact is excluded from this project drift calculation.
+
+After claim, append `--actor-id <packet owner.actor_id> --owner-epoch <packet owner.epoch>`
+to every mutating command shown above. Read-only `discover`, `validate`, and `status.py` do
+not require ownership.
+
 The controller validates the current and candidate documents, rejects illegal transitions
 or unverified PASS states, writes state atomically under an artifact lock, and journals
 started/committed transaction events. `validate` also rejects malformed JSONL, empty
@@ -175,10 +211,21 @@ committed or aborted terminal event only when the canonical state matches one of
 
 `seal` is the explicit pre-dispatch boundary for reviewed human-authored state. It is allowed only before execution and does not make prose correct; it records that the manager intentionally accepts the current structured baseline. New Full runs treat free-form `--evidence` as non-qualifying legacy context. `--evidence-file` hashes a non-empty artifact file and binds that receipt to the committed transition; a worker report still needs manager review and the relevant testing/evaluator gate.
 
+Cross-runtime continuation transfers durable, explicit state only. It does not transfer
+hidden chain-of-thought, provider-internal chat/session state, credentials, or an in-flight
+external side effect. No provider quota callback is assumed: automatic takeover begins when
+the replacement runtime is launched and executes `resume`.
+
 Before dispatch, validate human-authored Full specs semantically:
 
 ```bash
 python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/task_spec.md --type spec --require-filled
+```
+
+For stateful behavior, validate the witness before sealing or dispatching:
+
+```bash
+python3 <skill-dir>/scripts/state_witness_check.py <artifact-dir>/state_witness.md --require-filled
 ```
 
 The validator accepts explicit localized aliases and structural numbering, but rejects empty,
@@ -218,6 +265,8 @@ The manager can say the task is complete only when:
 - every required acceptance record is `pass` or explicitly `scoped_out` by user decision
 - required testing gate evidence has been reviewed, including RED/GREEN or substitute fields when applicable
 - required spec compliance and code quality reviews are `pass` or explicitly scoped out by user decision
+- required state witness and adversarial review are `pass` for stateful behavior
+- user-visible acceptance is not closed by policy-only evidence; flow/device/browser evidence or an explicit blocked boundary is recorded
 - evaluator `FAIL` has been resolved or explicitly scoped out by user decision
 - budget breakers are closed with a continuation or stop decision
 - trace points to the evidence used for completion

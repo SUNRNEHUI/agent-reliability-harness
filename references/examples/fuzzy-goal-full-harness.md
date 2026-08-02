@@ -32,10 +32,10 @@ Acceptance: feels faster, tests pass
 
 ### Risk-ordered phases
 
-0. Timing + visible terminal contract + baseline measurement  
-1. Remove proven stalls / duplicate work  
-2. Structural path changes  
-3. Final device/product acceptance  
+0. Timing + visible terminal contract + baseline measurement
+1. Remove proven stalls / duplicate work
+2. Structural path changes
+3. Final device/product acceptance
 
 ### Acceptance snippet
 
@@ -54,15 +54,15 @@ Only define timing/presentation contracts and tests (strict TDD). No optimizer w
 
 ## What managers should copy
 
-1. Terminal semantics before optimization  
-2. Fake-success blacklist  
-3. pass_algorithm  
-4. Measure then change  
-5. Narrow allowed_scope per task  
-6. Document priority  
+1. Terminal semantics before optimization
+2. Fake-success blacklist
+3. pass_algorithm
+4. Measure then change
+5. Narrow allowed_scope per task
+6. Document priority
 
 ## What managers should not copy blindly
 
-- Specific vendor codecs, device UDIDs, or product file paths  
-- Sample sizes and SLOs from another project without re-deriving them  
-- Full ceremony when Direct/Lite is enough  
+- Specific vendor codecs, device UDIDs, or product file paths
+- Sample sizes and SLOs from another project without re-deriving them
+- Full ceremony when Direct/Lite is enough

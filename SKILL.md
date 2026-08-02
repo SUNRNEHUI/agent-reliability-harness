@@ -1,210 +1,166 @@
 ---
 name: agent-reliability-harness
 description: >
-  Use when a task explicitly requests multi-agent, sub-agent, DAG, worktree, or parallel
-  delegation; when a vague or improvement-shaped goal is easy to fake-complete; or when
-  long, resumable, high-risk work needs durable evidence and acceptance across sessions.
-  Former names: Agent Dispatch Harness; Multi-Agent Dispatcher.
+  Use when the user says "你是主 agent" or "写一个 harness", requests a harness,
+  multi-agent delegation, parallel workers, durable handoff, cross-model continuation,
+  resumable execution, or protected evidence-based acceptance; also use when high-risk or
+  easy-to-fake completion needs controls beyond the repository's normal workflow. Route
+  work through progress-bounded Native, Portable, or Audited execution without forcing
+  artifacts, subagents, or extended reasoning.
 ---
 
 # Agent Reliability Harness
 
-**What this is:** a runtime-agnostic **task OS** — precise execution with intelligent
-proportional process. Not “always multi-agent”, not “always write a big harness”.
+Use the runtime's native planning and execution first. The product artifact is the work;
+the harness is only a control plane. Add durability and verification only when they reduce
+false completion, unsafe continuation, or expensive reconstruction.
 
-**Works on:** Codex, Claude Code, Grok, and any agent that can read files, run
-commands, and follow a short protocol. Runtime adapters are optional polish, not required.
+## Invariants
 
-```text
-User intent  →  density decision  →  (optional) Spec Synthesis  →  execute  →  evidence  →  done
-```
+1. Define the user-visible outcome, `done_when`, hard constraints, approval boundaries,
+   and required evidence before substantial implementation.
+2. Prefer external evidence over agent self-report.
+3. Persist decisions and observable state, never hidden reasoning or full chat history.
+4. Use the lightest mode that makes false completion and unsafe continuation unlikely.
+5. Keep provider/model choices in runtime adapters, not portable state.
+6. Never treat a plan, report, review, ledger, or harness PASS as user-visible delivery.
 
-## 0. Non-negotiables
+## Choose One Mode
 
-1. **Proportionality** — use the lightest mode that still makes false completion hard.
-2. **Evidence over self-report** — commands, diffs, logs, tests, screenshots; never “我觉得完成了”.
-3. **Terminal success is defined** — if success is easy to fake, define fake-success first.
-4. **User owns intent + veto; you own compilation + verification.**
-5. **Do not spend tokens on ceremony** that does not reduce risk or enable resume.
+| Mode | Choose when | Durable files |
+| --- | --- | --- |
+| **Native** | Default. The active session can implement and verify the next slice without costly reconstruction. | None. Use the runtime's Plan and task tracking. |
+| **Portable** | Work may cross sessions/models, wait on external state, or use workers whose results must survive context loss. | `.harness/<slug>/contract.json`, `events.jsonl`, `capsule.md` |
+| **Audited** | Production, release, permissions, security, destructive changes, disputed ownership, or high fake-success risk requires stronger receipts and review. | Portable state plus the existing typed evidence, witness, fencing, and trace controls. |
 
-## 1. Density decision (when to write a harness)
+Parallelism is an execution choice, not a mode. A vague goal needs planning, not
+automatically Portable or Audited state.
 
-Answer in order. **Stop at the first match.**
+## Delivery First
 
-| If… | Mode | Write on disk? | Token budget |
-|-----|------|----------------|--------------|
-| Typo, one file, obvious command, narrow bug, pure Q&A | **Direct** | **No** harness files | Just do + verify |
-| Clear goal, 2–5 steps, one owner, low false-completion risk | **Direct+** | Optional 5–10 line plan **in chat only** | No `workspace/` |
-| Fuzzy goal **or** easy fake success **or** improvement-shaped (faster/better) | **Synthesize first** | Compact in chat, or Lite notes, or Full files — see §2 | Synthesis short; Full only if long |
-| Medium work, clean parallel ownership, user OK with workers | **Lite** | Short plan + compact reports; **no** full registry by default | Bounded workers |
-| Long / multi-stage / resumable / multi-session / high risk / need evaluator | **Full** | Durable `workspace/<slug>/` artifacts | Worth the tokens |
+Name the smallest executable, user-visible, or testable slice before coordinating:
 
-**Hard rules**
+- Use Native unless a real durability trigger exists.
+- Spend at most one coordination pass, and keep an implementation or verification lane active.
+- Review a concrete candidate and prefer one decisive result over duplicate narratives.
 
-- Multi-agent **words** ≠ must dispatch. Tiny task + “用多 agent” → still Direct (say so once).
-- **Single owner** + medium steps → **Direct+** (chat plan), even if user said multi-agent — Lite only when parallel ownership is real.
-- Fuzzy goal ≠ Full harness. Prefer **compact synthesis** (§2) then Direct/Lite.
-- Improvement-shaped (latency, cost, accuracy) → at least terminal metric + baseline plan before “optimize”.
-- If coordination cost > implementation cost → do not dispatch.
+An `EXPERIMENTAL`, `UNVERIFIED`, or `UNALIGNED` result may guide work, but is not complete.
 
-**Do NOT create** `run_state.json` / full artifact dirs for small or medium tasks unless Full triggers fire.
+## Progress Circuit Breaker
 
-### Cost-aware model routing (after density)
+Count a cycle as progress only when it produces at least one observable event: **new
+evidence**, an **artifact change**, a **test result**, or a **binding decision** that removes
+an open branch.
 
-Model choice never justifies dispatch. Finish a tiny task in the current thread; use a
-cheaper worker only when repeated/parallel work outweighs coordination cost.
+- Plan only the next one to three actions. Once a safe, reversible action can distinguish
+  the current hypotheses, execute it instead of refining the plan.
+- Do not repeat broad file reads, full test matrices, reviews, or speculative redesigns
+  unless the previous result created a new question.
+- After two consecutive cycles without a progress event, mark the path `STALLED`.
+- On `STALLED`, separate facts, assumptions, and the current hypothesis, then run one
+  cheapest falsifying experiment.
+- If that experiment yields no new evidence, stop the current reasoning chain. Use one
+  fresh, bounded diagnosis with only the compact fact packet, or report the blocker.
+- Stagnation must not increase reasoning effort. A higher-effort model is not a substitute
+  for a new diagnosis or discriminating evidence.
 
-| Profile | Model / effort | Route |
-|---|---|---|
-| `fast` | Luna `medium` | simple + mechanically verifiable |
-| `main` | Luna `xhigh` | default high-frequency manager/executor |
-| `planner` | Sol `high` | fuzzy goals, planning, harness synthesis |
-| `critical_reviewer` | Sol `xhigh` | high risk, conflict, two validation failures |
+## Native Workflow
 
-Terra is not used by this Codex policy. Run `scripts/model_router.py` when uncertain. Persist
-the runtime/profile/model/reason in every real Full dispatch. Deep rules and CLI:
-`references/model-routing.md`.
+- Use the runtime's Plan mode; do not mirror it into another checklist.
+- Stay Native while the session can execute and verify safely. Materialize only when context
+  loss would make continuation unsafe or expensive.
+- Normal tests and diffs are evidence; add a trace only when chronology is required.
 
-## 2. Spec Synthesis (fuzzy → executable)
+Durability triggers include an expected session/runtime switch, a long external wait,
+multiple writers, or important decisions that are expensive to reconstruct.
 
-When the user cannot fully specify success, **you compile** — user reviews/vetoes.
+## Portable Workflow
 
-### Compact (default — chat or `synthesis_notes.md`)
-
-```text
-1) Success: user-facing + system condition (≤3 lines)
-2) Not success: ≥3 fake-success items (if risk)
-3) Non-goals / constraints (defaults OK, mark recommended)
-4) Accept: pass rule OR “TBD after measure: …” (never invent SLOs)
-5) Steps: risk-ordered (measure before optimize when needed)
-6) First action + stop conditions
-```
-
-### Full (only if §1 says Full)
-
-Durable files under `<project>/workspace/<slug>/`. Prefer:
+After the plan is ready and a durability trigger exists, compile only the portable facts:
 
 ```bash
-python3 <skill-dir>/scripts/init_run.py --project-root <project> --title "<title>" --with-synthesis
+python3 <skill-dir>/scripts/harnessctl.py materialize <project-root> \
+  --title "<title>" --goal "<outcome>" \
+  --done-when "<observable criterion>" \
+  --constraint "<hard constraint>" \
+  --next-action "<one literal action>"
 ```
 
-Then **fill** templates (empty headings ≠ plan). Stage `0` synthesis stays ready before impl tasks.
-
-Deep guide: read `references/spec-synthesis.md` **only when** doing Full or stuck on synthesis quality.  
-Quality bar example: `references/examples/fuzzy-goal-full-harness.md`.
-
-**Document priority (Full):**  
-`task_spec` > `acceptance_registry` > `run_state` > `tasks/*` > review prose.
-
-## 3. Execution modes
-
-### Direct
-
-- No workers, no harness artifacts.
-- Do the work; run the smallest real check; summarize.
-
-### Lite
-
-- Short plan: owners, scope, outputs, verification.
-- Workers only with **disjoint** ownership and self-contained prompts.
-- Reports: compact file or short status — not essay spam.
-- Fuzzy override lives in plan / `synthesis_notes.md`, **not** a fake Full `run_state`.
-
-### Full
-
-```text
-Intake → Density/Mode → Synthesis? → Capability → Artifacts → DAG
-  → Workers → State → Verify → Stop? → Merge → Handoff
-```
-
-- Manager owns state, merge, final acceptance.
-- Workers own bounded slices only.
-- `init_run --with-synthesis`: impl tasks stay `planned` until synthesis checklist done.
-- Before dispatch, validate filled specs with `validate_report.py ... --type spec --require-filled`.
-- After human-authored Full JSON/spec edits and before execution, run `harnessctl.py seal <artifact-dir> --reason <why>` to bind the reviewed baseline.
-- Record every real worker with `dispatch-create` immediately after spawn and advance it with `dispatch-update`; chat-only worker IDs are not resumable state.
-- Mutate run, task, and acceptance statuses through `harnessctl.py`; direct JSON edits are not accepted evidence.
-- Protected PASS uses controller-generated typed receipts such as `--evidence-file`; free-form `--evidence` is supporting context only and cannot complete a new Full run.
-- Run `harnessctl.py validate <artifact-dir>` before resume, evaluation, and final acceptance.
-
-Capability / worktree / TDD details: load only when needed (`references/tdd-gates.md`, adapters).
-
-## 4. Worker contract (any model)
-
-Prompt must be **self-contained**: goal, allowed scope, constraints, outputs, verify, stop, report path.  
-No “as discussed above”.
-
-Worker returns **only**:
-
-```text
-状态：已完成 / 失败 / 需要决策
-报告：<path>
-产出：N 个文件（路径）
-决策点：一句话或无
-```
-
-Implementation reports need gate mode + RED/GREEN or substitute (+ no-test reason).  
-`已完成` ≠ final PASS — manager/evaluator accepts on evidence.
-
-Optional: `python3 <skill-dir>/scripts/validate_report.py <report> --type subagent`
-
-## 5. Verification & stop (precision)
-
-**Accept only with external evidence:** tests, typecheck, build, logs, browser, API readback. In Full mode, retain the checked output/report inside the artifact and pass it through `--evidence-file` so the controller records its digest and transaction receipt.
-Reject stubs/TODOs/mocks as “done”. UI paths need browser/screenshot when available.
-
-**Manager re-verify (required):** before PASS, the manager (or evaluator) must **re-run or re-check** the critical command/diff themselves. Copying a worker’s “已完成” or a self-written `VERIFY_OK` string is **not** evidence. For docs, check concrete content (not only heading presence).
-
-**`score_harness` is never product acceptance.** It only rates plan/harness quality. Synthesis “aligned” requires filled contracts + human-meaningful rules; a high score alone does not finish the user task.
-
-**Accept rules must be semantic when risk matters:** prefer “contains concrete policy defaults (retry/timeout numbers)” over substring-only `## Policy` checks that hollow text can pass.
-
-**Stop** (do not thrash): scope explosion; same failure twice without new diagnosis; destructive/prod/paid ops; ownership clash; missing env; budget blown. Record `stop_reason` + decision needed. After synthesis passes, clear stale `blocked_until_synthesis` on ready impl tasks.
-
-**High-impact** (prod data, publish, permissions): stop for confirmation — not a multi-agent trigger by itself.
-
-## 6. Token discipline (smart, not cheap)
-
-| Do | Don't |
-|----|--------|
-| Decide density in ≤10 lines of thought | Paste full Full-harness templates into chat |
-| **Direct:** this file only (0 extra refs unless blocked) | Read all of `references/` for a typo |
-| Load **one** reference when blocked | Load every adapter + eval_cases by default |
-| Keep Full state on disk; chat = status | Dump entire `run_state` into every message |
-| One alignment question with recommended default | Interrogate the user for a perfect brief |
-| Score harness only when judging plan quality | Equate high `score_harness` with product done |
-| After Full `init_run`, fill or delete empty skeletons | Leave blank `progress`/template shells that drag integrity |
+Checkpoint only at verified boundaries:
 
 ```bash
-# Optional: score a Full artifact dir (plan quality ≠ product success)
-python3 <skill-dir>/scripts/score_harness.py --fixture <artifact-dir> --pretty
+python3 <skill-dir>/scripts/harnessctl.py checkpoint <project-root> \
+  --runtime <runtime> --actor-id <actor> --owner-epoch <epoch> \
+  --completed "<result>" --next-action "<literal action>" \
+  --pending-verification "<check>" --reason "<why now>"
 ```
 
-## 7. Progressive reference load
+Use `handoff` for clean transfer. A replacement runs `resume`, validates drift, claims a new
+owner epoch, and reads the bounded capsule. Run `close` at terminal boundaries; `accepted`
+requires evidence and no blocker or pending verification. The contract is the current
+snapshot; the capsule is generated context, not a second truth.
 
-| Situation | Read |
-|-----------|------|
-| Fuzzy / fake-success design | `references/spec-synthesis.md` |
-| Density edge cases | `references/proportionality.md` |
-| TDD / RED-GREEN chronology | `references/tdd-gates.md` |
-| Roles manager/worker/evaluator | `references/roles.md` |
-| Stop / rollback detail | `references/stop-conditions.md` |
-| Bugfix vs feature lane | `references/bugfix-lane.md` / `feature-spec-lane.md` |
-| Protocol depth | `references/harness-protocol.md` |
-| Codex / Claude specifics | `adapters/codex.md` / `adapters/claude-code.md` |
-| Universal runtime notes | `adapters/universal.md` |
-| Cost/model routing | `references/model-routing.md` + runtime adapter |
-| Eval / regression of this skill | `references/eval_cases.md` |
+Read `references/portable-contract.md` when creating, resuming, migrating, or debugging a
+Portable run.
 
-**Default:** this file + maybe one reference. That is enough for most runs.
+## Audited Extensions
 
-## 8. Manager handoff shape (end of turn)
+Escalate only the controls justified by risk:
 
-- Mode used (Direct / Lite / Full) + why (one line)
-- What changed / evidence
-- Residual risk + next step  
-If Full: point to artifact paths, not paste everything.
+- State/UI/async/concurrency behavior: require a Production State Witness tied to the real
+  production call chain and failing state combination.
+- Protected acceptance: use typed evidence receipts and manager re-verification.
+- Multiple writers or runtime takeover: retain owner epoch fencing and drift checks.
+- Behavior changes with meaningful tests: preserve real RED/GREEN chronology; otherwise
+  record the substitute verification and why tests were not viable.
+- High-impact actions: stop for confirmation before external writes, publish, destructive
+  operations, purchases, permissions, or production data changes.
+
+Apply Audited controls at the risky transition or final claim, not automatically to every
+reversible precursor.
+
+Legacy Full artifacts remain readable as `handoff-v1`. Use
+`references/harness-protocol.md` only for Audited or legacy runs.
+
+## Workers
+
+Use native subagent orchestration only when ownership is disjoint and parallel work saves
+more than coordination costs. At least one lane must advance the executable critical path.
+Give each worker a self-contained goal, allowed scope, outputs, verification, progress event,
+and stop rules. Use a concise result in Native mode; require a durable report only for
+handoff or audit. The manager still owns merge and acceptance.
+
+## Accept And Stop
+
+- Re-run or inspect the critical evidence before claiming completion.
+- Re-run the smallest decisive check, not a worker's complete matrix without a concrete
+  integration concern.
+- UI acceptance needs user-visible or controlled-flow evidence when available; a policy
+  unit test alone cannot close a visible symptom.
+- Stop on unresolved scope expansion, ownership conflict, missing environment, unsafe side
+  effects, budget exhaustion, or two repeated failures without a new diagnosis.
+- A high harness score is plan-quality evidence, never product acceptance.
+
+## Load On Demand
+
+| Need | Read |
+| --- | --- |
+| Mode unclear, execution slow, or reasoning stalled | `references/proportionality.md` |
+| Portable schema, capsule, resume | `references/portable-contract.md` |
+| Audited state and receipts | `references/harness-protocol.md` |
+| Stateful/UI/async behavior | `references/state-witness.md` |
+| TDD chronology | `references/tdd-gates.md` |
+| Stop and rollback detail | `references/stop-conditions.md` |
+| Runtime behavior | one relevant file under `adapters/` |
+| Optional model/cost routing | `references/model-routing.md` plus the runtime adapter |
+
+Default to this file only. Load one additional reference when the selected mode or a real
+blocker requires it.
+
+At the end, report the selected mode only when it affected execution, plus changed files,
+decisive verification, unresolved risk, and the next action. For Portable or Audited work,
+point to the capsule/artifact instead of pasting its full state.
 
 ---
 
-*Agent Reliability Harness v7.0.0 | 2026-07-14*
+*Agent Reliability Harness v9.1.0 | 2026-08-02*

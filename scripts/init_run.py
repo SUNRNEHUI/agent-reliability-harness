@@ -179,7 +179,7 @@ def default_continuation(
     }
 
 
-def default_state_layers(mode: str = "full", state_witness_required: bool = False) -> dict[str, object]:
+def default_state_layers(mode: str = "audited", state_witness_required: bool = False) -> dict[str, object]:
     if mode == "lite":
         return {
             "working_state": {
@@ -243,12 +243,12 @@ def main() -> int:
         "--mode",
         choices=("native", "portable", "audited", "direct", "lite", "full"),
         default="audited",
-        help="Artifact mode. direct/lite/full remain legacy aliases; use harnessctl materialize for Portable.",
+        help="Artifact mode. direct/full remain aliases; lite is retained for legacy compatibility. Use harnessctl materialize for Portable.",
     )
     parser.add_argument(
         "--with-synthesis",
         action="store_true",
-        help="Seed Spec Synthesis checklist, stage 0.1 task, and ALIGNMENT.md (full mode only).",
+        help="Seed Spec Synthesis checklist, stage 0.1 task, and ALIGNMENT.md (Audited mode only).",
     )
     parser.add_argument(
         "--with-state-witness",
@@ -273,11 +273,11 @@ def main() -> int:
             "Portable mode requires an approved plan; use harnessctl.py materialize with goal, done_when, and next_action."
         )
 
-    if args.mode == "audited":
-        args.mode = "full"
+    if args.mode == "full":
+        args.mode = "audited"
 
-    if args.with_synthesis and args.mode != "full":
-        raise SystemExit("--with-synthesis is only valid with --mode full")
+    if args.with_synthesis and args.mode != "audited":
+        raise SystemExit("--with-synthesis is only valid with --mode audited")
 
     project_root = Path(args.project_root).resolve()
     slug = slugify(args.slug or args.title)
@@ -302,7 +302,7 @@ def main() -> int:
     task_items: list[dict[str, object]] = []
     stage_items: list[dict[str, object]] = []
 
-    if args.mode == "full" and args.with_synthesis:
+    if args.mode == "audited" and args.with_synthesis:
         synth_task_path = artifact_dir / "tasks" / "0.1-spec-synthesis.md"
         synth_body = (
             "# Task 0.1: Spec Synthesis\n\n"
@@ -372,7 +372,7 @@ def main() -> int:
             }
         )
 
-    if args.mode == "full":
+    if args.mode == "audited":
         for index, agent in enumerate(agents, start=1):
             output_path = artifact_dir / "tasks" / f"1.{index}-{agent}.md"
             if write_task_from_template(template_dir, output_path, agent, index, args.force):
@@ -388,8 +388,8 @@ def main() -> int:
             "status": "planned",
             "owner": agent,
             "allowed_scope": [],
-            "task_path": f"tasks/1.{index}-{agent}.md" if args.mode == "full" else "",
-            "report_path": f"1.{index}-{agent}-report.md" if args.mode == "full" else "",
+            "task_path": f"tasks/1.{index}-{agent}.md" if args.mode == "audited" else "",
+            "report_path": f"1.{index}-{agent}-report.md" if args.mode == "audited" else "",
             "dependencies": ["0.1"] if args.with_synthesis else [],
             "expected_outputs": [],
             "verification": [],
@@ -465,13 +465,13 @@ def main() -> int:
             },
         }
     else:
-        full_state_layers = default_state_layers(
-            mode="full",
+        audited_state_layers = default_state_layers(
+            mode="audited",
             state_witness_required=args.with_state_witness,
         )
         if args.with_synthesis:
-            full_state_layers["working_state"]["current_stage"] = "0"
-            full_state_layers["session_state"]["document_priority"] = [
+            audited_state_layers["working_state"]["current_stage"] = "0"
+            audited_state_layers["session_state"]["document_priority"] = [
                 "task_spec.md",
                 "acceptance_registry.json",
                 "run_state.json",
@@ -544,11 +544,11 @@ def main() -> int:
                 "created_at": now,
                 "updated_at": now,
                 "title": args.title,
-                "mode": "full",
+                "mode": "audited",
                 "artifact_dir": str(artifact_dir),
                 "trace_path": "trace.jsonl",
                 "tdd_trace_path": "tdd_trace.jsonl",
-                "state_layers": full_state_layers,
+                "state_layers": audited_state_layers,
                 "continuation": default_continuation(
                     task_items,
                     project_root=project_root,
@@ -584,7 +584,7 @@ def main() -> int:
             },
         }
 
-    if args.mode == "full":
+    if args.mode == "audited":
         trace_event = json.loads(str(protocol_files["trace.jsonl"]))
         trace_event["state_digests"] = {
             filename: hashlib.sha256(
@@ -605,7 +605,7 @@ def main() -> int:
         else:
             skipped.append(output_path)
 
-    if args.mode == "full" and args.with_synthesis:
+    if args.mode == "audited" and args.with_synthesis:
         alignment = (
             "# Alignment Packet\n\n"
             f"- title: {args.title}\n"

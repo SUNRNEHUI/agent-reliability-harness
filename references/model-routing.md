@@ -33,6 +33,12 @@ lower-effort baseline.
 The Codex parent thread may remain on Sol `max` as the planner and acceptance owner. The
 `main` profile names a routed execution lane; it does not replace the parent session default.
 
+When the local Codex installation exposes the custom agent type `luna_worker`, use that
+named agent for a justified Luna execution route. Give it a self-contained
+`fork_turns=none` task. The distributed skill does not install or require this personal
+agent configuration; absence falls back to the active thread or another available worker.
+Verify the resolved agent type and model before claiming that Luna executed the task.
+
 Existing Audited runs that record `cost-aware-v1` remain resumable and are checked against
 the v1 profile map sealed when they were created. New routes never emit that legacy policy;
 changing an old run to v2 requires an explicit migration rather than silently reinterpreting

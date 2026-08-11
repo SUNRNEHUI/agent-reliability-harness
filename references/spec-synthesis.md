@@ -11,9 +11,9 @@ Run Spec Synthesis when any of these are true:
 - The user states a pain, wish, or direction without measurable acceptance.
 - Success could be faked by proxy metrics (loading spinners, unit tests only, self-report).
 - The work is multi-stage, resumable, improvement-shaped (latency, cost, accuracy), or high regression risk.
-- Full Harness is selected, or Lite needs a compact but real contract.
+- Audited mode is selected and the goal still lacks measurable acceptance.
 
-Skip for Direct Mode tiny tasks.
+Skip when the Native or Portable plan already has measurable acceptance.
 
 ## Product Principle
 
@@ -27,16 +27,13 @@ Evaluator/manager owns acceptance from external evidence.
 ## Mode Coupling
 
 ```text
-Direct Mode      -> no synthesis artifacts; execute and verify (only if goal already measurable/tiny)
-Lite Orchestration -> compact synthesis (short plan or synthesis_notes.md + fake-success + acceptance bullets)
-Full Harness     -> durable synthesis into task_spec / registry / tasks / run_state
+Native   -> use the runtime plan; no synthesis artifacts
+Portable -> compile the measurable outcome into the three-file contract
+Audited  -> add task_spec / registry / tasks / run_state only when protected controls need them
 ```
 
-Lite override / checklist surface: short plan section, `synthesis_notes.md`, or progress snippet — **not** Full `run_state` invented only for waiver.
-
-Fuzzy / false-completion-prone goals must run Spec Synthesis **before** classifying residual work as Direct typo-sized execution.
-
-Do not create Full artifacts only to look thorough.
+Do not create Audited artifacts only to look thorough. A fuzzy goal needs planning; it does
+not by itself require durable state or protected controls.
 
 ## Synthesis Pipeline
 
@@ -62,7 +59,7 @@ Success is X.
 Success is NOT Y / Z / W.
 ```
 
-### 3. Fake-success blacklist (mandatory for Lite/Full when risk of false completion)
+### 3. Fake-success blacklist (mandatory when false-completion risk is material)
 
 List at least three items that look done but are not, appropriate to the domain. Examples of categories (not all required):
 
@@ -133,7 +130,8 @@ Because the user may not know how to specify goals, present a short review packe
 6) 需要你拍板的问题（每个带推荐默认）
 ```
 
-Prefer one decision question at a time when blocked; otherwise proceed on recommended defaults and record them in `run_state`.
+Prefer one decision question at a time when blocked; otherwise proceed on recommended
+defaults and record them in the active plan or durable contract when one exists.
 
 ## Document Priority (canonical truth)
 
@@ -152,7 +150,8 @@ Review reports are evidence and advice, not a second constitution.
 
 ## Quality Gate Before Dispatch
 
-For Full Harness (and serious Lite), manager must not set tasks to `running` implementation until synthesis checklist passes or explicit user override is recorded:
+For an Audited run, the manager must not set implementation tasks to `running` until the
+synthesis checklist passes or an explicit user override is recorded:
 
 - [ ] Rewritten goal with user-facing + system completion
 - [ ] ≥3 fake-success items when false-completion risk exists
@@ -169,18 +168,17 @@ If checklist fails → status `needs_decision` or remain in `specified`, not `di
 
 If the goal is faster / cheaper / more accurate / more reliable:
 
-1. Force a measurement Phase 0 (or Lite equivalent baseline note)
+1. Force a measurement Phase 0 or a Native baseline note
 2. Define terminal metric carefully
 3. Require raw evidence retention, not averages only
 4. Require real improvement on the user-relevant tail when applicable (e.g. p50 **and** p95), not warm-only or microbenchmark-only wins
 
 ## Scoring Hook
 
-Use bundled scorers to evaluate harness instances and skill protocol coverage:
+Use the bundled scorer only when Audited synthesis quality is itself a blocking question:
 
 ```bash
 python3 <skill-dir>/scripts/score_harness.py --fixture <artifact-dir> --pretty
-python3 <skill-dir>/scripts/score_skill_protocol.py --skill-root <skill-dir> --pretty
 ```
 
 Interpretation guidance:
@@ -189,7 +187,7 @@ Interpretation guidance:
 |---------------|---------|
 | < 45 | empty/weak synthesis — do not treat as executable program of record |
 | 45–74 | partial — fill fake-success, pass_algorithm, contracts |
-| ≥ 75 | usable Full-style instance |
+| ≥ 75 | usable Audited instance |
 | ≥ 85 | strong synthesis quality |
 
 Scores measure **harness quality**, not product success.
@@ -200,7 +198,7 @@ Scores measure **harness quality**, not product success.
 - Acceptance = "更好 / 更快 / 专业"
 - Dispatching workers before terminal success is defined
 - Inventing numeric SLOs with no measurement plan
-- Full ceremony for typo-sized work
+- Audited ceremony for typo-sized work
 - Treating reviewer essays as overriding task_spec
 - Letting workers expand scope because the goal felt big
 
@@ -208,6 +206,3 @@ Scores measure **harness quality**, not product success.
 
 - `harness-protocol.md` — control loop and modes
 - `tdd-gates.md` — behavior change verification chronology
-- `roles.md` — manager / worker / evaluator split
-- `feature-spec-lane.md` / `bugfix-lane.md` — development lanes after synthesis
-- `examples/fuzzy-goal-full-harness.md` — worked example of synthesis quality

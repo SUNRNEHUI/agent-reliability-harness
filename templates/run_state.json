@@ -5,6 +5,7 @@
   "created_at": "",
   "updated_at": "",
   "title": "",
+  "mode": "audited",
   "artifact_dir": "",
   "trace_path": "trace.jsonl",
   "tdd_trace_path": "tdd_trace.jsonl",

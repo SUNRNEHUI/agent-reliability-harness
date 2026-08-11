@@ -36,14 +36,15 @@ audit trigger belongs in Portable v2.
 
 Existing Full artifacts keep their original `mode: full`, state machine, acceptance
 registry, and trace semantics. Historical Direct and Lite paths did not require this record
-set and should not be initialized for new work. In v8 terminology, this complete record set
-is the Audited compatibility format.
+set and should not be initialized for new work. New runs write `mode: audited`; both values
+use the same guarded state machine so legacy artifacts remain resumable without migration.
 
 ## Required Records
 
 Required records are mandatory only for Audited or legacy Full runs.
 
-A Full Harness run should preserve these records in durable files when the task is complex or resumable.
+An Audited or legacy Full run preserves these records only when the selected controls need
+them.
 
 The runtime schema version is defined once in `scripts/harness_schema.py`. Templates,
 initialization, validation, and guarded transitions must use that source. A mismatched or
@@ -103,7 +104,7 @@ model is not evidence that the runtime resolved it. Runtime-specific mappings li
 
 ### Production State Witness Record
 
-For state/UI/async/concurrency behavior, Full Harness must retain a `state_witness.md`
+For state/UI/async/concurrency behavior, Audited or legacy Full must retain a `state_witness.md`
 record before implementation. It contains:
 
 - symptom and terminal user-facing condition;
@@ -163,7 +164,7 @@ is an incomplete transition and blocks resume or acceptance.
 
 ## Controlled Runtime Operations
 
-After `init_run.py --mode full`, use the narrow control surface instead of hand-editing live
+After `init_run.py --mode audited`, use the narrow control surface instead of hand-editing live
 run, task, or acceptance statuses:
 
 ```bash
@@ -188,7 +189,7 @@ python3 <skill-dir>/scripts/harnessctl.py recover <artifact-dir>
 ```
 
 `resume` is the replacement runtime entry gate. From a project root it discovers exactly
-one non-terminal Full run, takes a coordination lock, recovers incomplete journal entries,
+one non-terminal Audited or legacy Full run, takes a coordination lock, recovers incomplete journal entries,
 validates all canonical state and evidence chains, then commits a new owner epoch and emits
 a resume packet. Zero active runs, multiple active runs, corrupt state, or failed recovery
 leaves ownership unchanged. Terminal runs are never auto-selected.
@@ -209,14 +210,14 @@ acceptance registries, schema drift, incomplete transactions, unresolved termina
 chat-only dispatches, canonical-state digest drift, evidence receipt/digest mismatch, and invalid active TDD traces. Journal records carry before/after digests; `recover` appends a
 committed or aborted terminal event only when the canonical state matches one of those digests.
 
-`seal` is the explicit pre-dispatch boundary for reviewed human-authored state. It is allowed only before execution and does not make prose correct; it records that the manager intentionally accepts the current structured baseline. New Full runs treat free-form `--evidence` as non-qualifying legacy context. `--evidence-file` hashes a non-empty artifact file and binds that receipt to the committed transition; a worker report still needs manager review and the relevant testing/evaluator gate.
+`seal` is the explicit pre-dispatch boundary for reviewed human-authored state. It is allowed only before execution and does not make prose correct; it records that the manager intentionally accepts the current structured baseline. New Audited runs treat free-form `--evidence` as non-qualifying legacy context. `--evidence-file` hashes a non-empty artifact file and binds that receipt to the committed transition; a worker report still needs manager review and the relevant testing/evaluator gate.
 
 Cross-runtime continuation transfers durable, explicit state only. It does not transfer
 hidden chain-of-thought, provider-internal chat/session state, credentials, or an in-flight
 external side effect. No provider quota callback is assumed: automatic takeover begins when
 the replacement runtime is launched and executes `resume`.
 
-Before dispatch, validate human-authored Full specs semantically:
+Before dispatch, validate human-authored Audited or legacy Full specs semantically:
 
 ```bash
 python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/task_spec.md --type spec --require-filled

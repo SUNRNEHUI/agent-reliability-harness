@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from harness_schema import is_audited_mode
     from harnessctl import (
         commit_transition,
         ensure_trace_structure_integrity,
@@ -24,6 +25,7 @@ try:
     from runtime_state import append_jsonl, locked, mutate_json
     from validate_report import validate_run_state
 except ImportError:  # pragma: no cover - supports `import scripts.harness_test_run`
+    from .harness_schema import is_audited_mode
     from .harnessctl import (
         commit_transition,
         ensure_trace_structure_integrity,
@@ -134,7 +136,7 @@ def update_run_state(
     artifact_dir = run_state_path.expanduser().resolve().parent
     with locked(artifact_dir / ".harnessctl"):
         state = read_json(run_state_path)
-        if state.get("mode") != "full":
+        if not is_audited_mode(state.get("mode")):
             mutate_json(run_state_path, mutate, writer_role="manager", scope="global")
             return
         ensure_trace_structure_integrity(artifact_dir)

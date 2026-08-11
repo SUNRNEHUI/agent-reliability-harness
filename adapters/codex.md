@@ -9,7 +9,8 @@ mirror that plan into another checklist while the session remains sufficient.
 - **Native:** Codex Plan plus the active task state; no harness files.
 - **Portable:** materialize the approved plan when work must survive a task, model, or
   runtime boundary.
-- **Audited:** enable legacy Full controls or targeted extensions for high-risk work.
+- **Audited:** use targeted controls for high-risk work; continue to accept legacy Full
+  artifacts during resume.
 
 Plan mode does not itself provide cross-provider durability. Before transfer, materialize
 the outcome, criteria, decisions, next action, workspace fingerprint, and evidence index.
@@ -26,10 +27,11 @@ override current workspace evidence.
 
 ## Progress Circuit Breaker
 
-Count only new evidence, an artifact change, a test result, or a binding decision as
-progress. After two no-progress cycles, stop the current chain. Pass facts, assumptions, the
-current hypothesis, and one falsifying experiment to at most one fresh bounded diagnosis;
-do not pass the full transcript or increase reasoning effort.
+Count only new evidence, an artifact change, a test result, or a binding decision that
+advances the named acceptance boundary. After two no-progress cycles, stop the current
+chain. Pass facts, assumptions, the current hypothesis, and one falsifying experiment to at
+most one fresh bounded diagnosis; do not pass the full transcript or increase reasoning
+effort.
 
 ## Subagents
 
@@ -40,6 +42,20 @@ writes to shared files or state.
 
 Persist only worker goal, ownership, result envelope, and evidence needed for continuation.
 Native thread IDs may be supporting metadata but cannot be required by another runtime.
+
+### Named Luna Worker
+
+When Codex exposes an installed custom agent named `luna_worker`, it is the preferred
+Luna `max` lane for a bounded long, mechanical, or independently verifiable task. Its use is
+conditional: do not assume another installation has the same agent.
+
+- Start it with `fork_turns=none`; provide a self-contained task, allowed scope, expected
+  output, verification, and stop rule.
+- Do not send it fuzzy architecture, product decisions, or final acceptance ownership.
+- Confirm the spawned agent type and resolved model from runtime evidence before reporting
+  that Luna ran.
+- If the named agent is unavailable, keep work in the active Native thread or use the
+  runtime's available worker fallback. Do not create configuration as a side effect of a task.
 
 ## Optional Model Routing
 

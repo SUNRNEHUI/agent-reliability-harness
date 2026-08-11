@@ -43,7 +43,7 @@ def init_artifact(temp: Path, *, mode: str, title: str, state_witness: bool = Fa
         "--title",
         title,
         "--agents",
-        "docs,review" if mode == "full" else "",
+        "docs,review" if mode in {"audited", "full"} else "",
         "--force",
     ]
     if state_witness:
@@ -52,7 +52,7 @@ def init_artifact(temp: Path, *, mode: str, title: str, state_witness: bool = Fa
     return temp / "workspace" / title.replace(" ", "-")
 
 
-def mark_full_passed(artifact_dir: Path) -> None:
+def mark_audited_passed(artifact_dir: Path) -> None:
     """Build a valid accepted fixture through the public controller commands."""
     run(["python3", "scripts/harnessctl.py", "seal", str(artifact_dir), "--reason", "runtime test fixture"])
     state = load_json(artifact_dir / "run_state.json")
@@ -168,11 +168,12 @@ def test_lite_init_is_minimal_and_state_witness_is_opt_in() -> None:
         shutil.rmtree(temp)
 
 
-def test_full_lifecycle_reaches_high_confidence() -> None:
-    temp = Path(tempfile.mkdtemp(prefix="adh-test-full-"))
+def test_audited_lifecycle_reaches_high_confidence() -> None:
+    temp = Path(tempfile.mkdtemp(prefix="arh-test-audited-"))
     try:
-        artifact = init_artifact(temp, mode="full", title="high confidence")
-        mark_full_passed(artifact)
+        artifact = init_artifact(temp, mode="audited", title="high confidence")
+        assert load_json(artifact / "run_state.json")["mode"] == "audited"
+        mark_audited_passed(artifact)
         result = run(["python3", "scripts/status.py", str(artifact / "run_state.json")])
         assert "Acceptance: 1 pass, 0 pending, 0 fail, 0 blocked, 0 scoped_out" in result.stdout
         assert "Completion confidence: high" in result.stdout
@@ -181,10 +182,19 @@ def test_full_lifecycle_reaches_high_confidence() -> None:
         shutil.rmtree(temp)
 
 
+def test_legacy_full_cli_alias_writes_current_audited_mode() -> None:
+    temp = Path(tempfile.mkdtemp(prefix="arh-test-full-alias-"))
+    try:
+        artifact = init_artifact(temp, mode="full", title="legacy alias")
+        assert load_json(artifact / "run_state.json")["mode"] == "audited"
+    finally:
+        shutil.rmtree(temp)
+
+
 def test_integrity_breaker_prevents_high_confidence() -> None:
     temp = Path(tempfile.mkdtemp(prefix="adh-test-integrity-"))
     try:
-        artifact = init_artifact(temp, mode="full", title="integrity breaker")
+        artifact = init_artifact(temp, mode="audited", title="integrity breaker")
         state_path = artifact / "run_state.json"
         state = load_json(state_path)
         state["status"] = "accepted"
@@ -263,58 +273,56 @@ def test_parallel_package_checks_use_isolated_temp_dirs() -> None:
         shutil.rmtree(temp)
 
 
-def test_trigger_shortcuts_route_without_forcing_full() -> None:
+def test_trigger_shortcuts_run_the_mode_gate_without_forcing_work() -> None:
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8").lower()
+    normalized_skill = " ".join(skill.split())
     default_prompt = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8").lower()
-    master_prompt = (ROOT / "master-prompt.md").read_text(encoding="utf-8").lower()
 
     for trigger in ("你是主 agent", "写一个 harness"):
-        assert trigger in skill
-        assert trigger in master_prompt
-    for text in (default_prompt, master_prompt):
-        assert "multi-agent" in text
-        assert "main agent" in text
-        for mode in ("native", "portable", "audited"):
-            assert mode in text
-    assert "do not" in master_prompt
+        assert trigger in normalized_skill
+    for mode in ("native", "portable", "audited"):
+        assert mode in default_prompt
+    assert "mode gate" in normalized_skill
+    assert "does not authorize delegation" in normalized_skill
+    assert "ordinary implementation, planning, and testing" in normalized_skill
+    assert "do not load references, route models, create harness files, or dispatch" in normalized_skill
     assert "$agent-reliability-harness" in default_prompt
 
 
-def test_routing_and_superpowers_policies_are_present() -> None:
+def test_optional_model_routing_policy_is_present() -> None:
     routing = (ROOT / "references" / "model-routing.md").read_text(encoding="utf-8")
     adapter = (ROOT / "adapters" / "codex.md").read_text(encoding="utf-8")
-    integration = (ROOT / "references" / "superpowers-integration.md").read_text(encoding="utf-8")
+    metadata = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
     for term in ("gpt-5.6-luna", "gpt-5.6-sol", "Luna `max`", "bounded Sol"):
         assert term in routing
     assert "gpt-5.6-luna" in adapter
     assert "progress circuit breaker" in adapter.casefold()
-    for term in ("Do not escalate", "review gates", "separate checks", "Do not copy whole"):
-        assert term in integration
+    assert "Model routing does not authorize delegation" in routing
+    assert "A Native one-line edit stays in the current thread" in routing
+    for text in (routing, adapter, metadata):
+        assert "luna_worker" in text
+    assert "fork_turns=none" in adapter
+    assert "self-contained" in adapter
+    assert "when configured" in metadata.casefold()
 
 
-def test_progress_circuit_breaker_is_in_hot_prompts() -> None:
+def test_progress_circuit_breaker_is_in_the_skill_entry() -> None:
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-    master = (ROOT / "master-prompt.md").read_text(encoding="utf-8")
-    worker = (ROOT / "sub-prompt.md").read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill.split())
     for term in ("Progress Circuit Breaker", "STALLED", "falsifying experiment"):
-        assert term in skill
-    assert "must not increase reasoning effort" in skill
-    assert "STALLED" in master
-    assert "new evidence" in worker
+        assert term in normalized_skill
+    assert "must not increase reasoning effort" in normalized_skill
 
 
 def test_plan_native_entry_is_lean_and_provider_neutral() -> None:
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-    master = (ROOT / "master-prompt.md").read_text(encoding="utf-8")
     metadata = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
 
-    assert len(skill.split()) <= 1200
-    assert len(master.split()) <= 450
+    assert len(skill.split()) <= 900
     for term in ("Native", "Portable", "Audited", "materialize", "capsule"):
         assert term in skill
     for provider_slug in ("gpt-5.6-luna", "gpt-5.6-sol", "grok-api"):
         assert provider_slug not in skill
-        assert provider_slug not in master
     assert "Direct / Lite / Full" not in skill
     assert len(metadata.split()) <= 120
     assert "$agent-reliability-harness" in metadata
@@ -332,21 +340,47 @@ def test_runtime_model_maps_are_outside_core_schema() -> None:
     assert "from runtime_profiles import" in router
 
 
-def test_runtime_package_contains_portable_contract_runtime() -> None:
+def test_runtime_package_contains_runtime_and_excludes_development_assets() -> None:
     temp = Path(tempfile.mkdtemp(prefix="arh-test-portable-package-"))
     try:
         package_dir = temp / "pkg"
         run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
         for relative in (
             "references/portable-contract.md",
-            "scripts/protocol_regression_harness.py",
-            "scripts/test_artifact_binding.py",
-            "scripts/test_lessons.py",
-            "scripts/test_plan_native_portable.py",
+            "references/harness-protocol.md",
+            "scripts/harnessctl.py",
+            "scripts/harness_test_run.py",
             "scripts/runtime_profiles.py",
             "templates/worker_result.json",
         ):
             assert (package_dir / relative).is_file(), relative
+        for relative in (
+            "master-prompt.md",
+            "sub-prompt.md",
+            "references/closed-loop-pattern.md",
+            "references/bugfix-lane.md",
+            "references/eval_cases.md",
+            "references/examples/fuzzy-goal-full-harness.md",
+            "references/feature-spec-lane.md",
+            "references/roles.md",
+            "references/state-memory-boundary.md",
+            "references/superpowers-integration.md",
+            "scripts/protocol_regression_harness.py",
+            "scripts/score_skill_protocol.py",
+            "scripts/test_artifact_binding.py",
+            "scripts/test_lessons.py",
+            "scripts/test_model_routing.py",
+            "scripts/test_plan_native_portable.py",
+            "scripts/validate_workspace.py",
+            "templates/acceptance_registry.json",
+            "templates/capability_snapshot.md",
+            "templates/lite_review.md",
+            "templates/run_state.json",
+            "templates/subagent_report.md",
+            "templates/tdd_trace.jsonl",
+            "templates/trace.jsonl",
+        ):
+            assert not (package_dir / relative).exists(), relative
     finally:
         shutil.rmtree(temp)
 
@@ -355,17 +389,18 @@ def main() -> int:
     tests = [
         test_progress_template_is_lightweight,
         test_lite_init_is_minimal_and_state_witness_is_opt_in,
-        test_full_lifecycle_reaches_high_confidence,
+        test_audited_lifecycle_reaches_high_confidence,
+        test_legacy_full_cli_alias_writes_current_audited_mode,
         test_integrity_breaker_prevents_high_confidence,
         test_negative_validator_and_package_check,
         test_runtime_package_contains_state_witness_runtime,
         test_parallel_package_checks_use_isolated_temp_dirs,
-        test_trigger_shortcuts_route_without_forcing_full,
-        test_routing_and_superpowers_policies_are_present,
-        test_progress_circuit_breaker_is_in_hot_prompts,
+        test_trigger_shortcuts_run_the_mode_gate_without_forcing_work,
+        test_optional_model_routing_policy_is_present,
+        test_progress_circuit_breaker_is_in_the_skill_entry,
         test_plan_native_entry_is_lean_and_provider_neutral,
         test_runtime_model_maps_are_outside_core_schema,
-        test_runtime_package_contains_portable_contract_runtime,
+        test_runtime_package_contains_runtime_and_excludes_development_assets,
     ]
     for test in tests:
         test()

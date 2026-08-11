@@ -37,18 +37,23 @@ def sha256(path: Path) -> str:
 class ProgressCircuitBreakerPolicyTests(unittest.TestCase):
     def test_progress_circuit_breaker_is_explicit_and_domain_neutral(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        normalized = " ".join(skill.split())
         for term in (
             "Progress Circuit Breaker",
             "new evidence",
             "artifact change",
             "test result",
             "binding decision",
+            "named `done_when` criterion",
+            "named critical-path blocker",
+            "does not count as progress",
+            "Generated metadata, reports, package rebuilds",
             "two consecutive",
             "`STALLED`",
             "falsifying experiment",
             "must not increase reasoning effort",
         ):
-            self.assertIn(term, skill)
+            self.assertIn(term, normalized)
         self.assertNotIn("Effect Reconstruction Fast Lane", skill)
 
 
@@ -155,6 +160,31 @@ class PlanNativePortableTests(unittest.TestCase):
         self.assertEqual(contract["evidence"][0]["path"], "README.md")
         self.assertEqual(contract["evidence"][0]["sha256"], sha256(self.project / "README.md"))
         self.assertNotIn("initial", json.dumps(contract["evidence"]))
+
+    def test_checkpoint_accepts_explicit_capsule_limit_for_long_running_contract(self) -> None:
+        artifact = self.materialize("long checkpoint task")
+        checkpoint = self.harness(
+            "checkpoint",
+            str(artifact),
+            "--runtime",
+            "codex-desktop",
+            "--actor-id",
+            "root",
+            "--owner-epoch",
+            "1",
+            "--next-action",
+            "Continue the long-running task",
+            "--completed",
+            "x" * 5800,
+            "--max-chars",
+            "8000",
+            "--reason",
+            "Preserve a bounded but larger resume capsule",
+        )
+        require_success(checkpoint)
+        capsule = (artifact / "capsule.md").read_text(encoding="utf-8")
+        self.assertGreater(len(capsule), 6000)
+        self.assertLessEqual(len(capsule), 8000)
 
     def test_resume_returns_capsule_and_tiered_reads(self) -> None:
         artifact = self.materialize("resume task")
@@ -285,7 +315,7 @@ class PlanNativePortableTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("events.jsonl", result.stdout + result.stderr)
 
-    def test_resume_rejects_active_portable_and_full_ambiguity(self) -> None:
+    def test_resume_rejects_active_portable_and_audited_ambiguity(self) -> None:
         portable = self.materialize("portable active")
         initialized = run(
             "python3",
@@ -293,7 +323,7 @@ class PlanNativePortableTests(unittest.TestCase):
             "--project-root",
             str(self.project),
             "--mode",
-            "full",
+            "audited",
             "--title",
             "audited active",
             "--agents",
@@ -301,6 +331,7 @@ class PlanNativePortableTests(unittest.TestCase):
         )
         require_success(initialized)
         audited = self.project / "workspace" / "audited-active"
+        self.assertEqual(load_json(audited / "run_state.json")["mode"], "audited")
         before = {
             portable / "contract.json": sha256(portable / "contract.json"),
             audited / "run_state.json": sha256(audited / "run_state.json"),

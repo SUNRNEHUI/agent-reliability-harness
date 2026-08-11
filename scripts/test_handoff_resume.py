@@ -59,7 +59,7 @@ class HandoffResumeTests(unittest.TestCase):
             "--project-root",
             str(self.project),
             "--mode",
-            "full",
+            "audited",
             "--title",
             title,
             "--agents",
@@ -408,6 +408,7 @@ class HandoffResumeTests(unittest.TestCase):
         artifact = self.init_artifact("legacy run")
         state_path = artifact / "run_state.json"
         state = load_json(state_path)
+        state["mode"] = "full"
         state.pop("continuation", None)
         write_json(state_path, state)
         trace_path = artifact / "trace.jsonl"

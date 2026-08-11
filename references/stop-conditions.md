@@ -9,8 +9,8 @@ Stop and ask for a decision, narrow the scope, or create a new stage when any co
 - A required dependency, credential, environment, or external service is unavailable.
 - The agent is about to revert or overwrite changes it did not make.
 - Verification has failed twice for the same stage without a new diagnosis.
-- Two consecutive cycles produced no new evidence, artifact change, test result, or binding
-  decision.
+- Two consecutive cycles produced no evidence, artifact change, test result, or binding
+  decision that advances a named `done_when` criterion or named critical-path blocker.
 
 ## Multi-Agent Stops
 

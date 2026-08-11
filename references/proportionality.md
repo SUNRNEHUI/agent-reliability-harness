@@ -31,8 +31,11 @@ risk. Do not pre-pay every future profile's proof cost.
 ## Progress Budget
 
 A cycle advances only when it creates new evidence, an artifact change, a test result, or a
-binding decision. Planning and prose that restate the same hypothesis do not reset the
-budget.
+binding decision that directly advances a named `done_when` criterion or named critical-path
+blocker. Activity outside the current acceptance boundary does not reset the budget. Generated
+metadata, reports, package rebuilds, inventory, and auxiliary tests are no-progress events
+unless the criterion explicitly requires them. Planning and prose that restate the same
+hypothesis do not reset the budget.
 
 After two no-progress cycles:
 

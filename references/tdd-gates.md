@@ -46,7 +46,9 @@ The dispatcher uses two separate gates. Do not collapse them into a generic "tes
 
 ### Test-First Evidence Gate
 
-Use this by default for Lite Orchestration or Full Harness code behavior changes.
+Use this trace-backed gate for Audited code behavior changes when meaningful test-first
+evidence exists. Native and Portable work still follows project testing rules without
+creating an Audited trace solely for chronology.
 
 Requirements:
 
@@ -90,7 +92,7 @@ later GREEN/REFACTOR/verification PASS. Use this only for files that belong to
 the current TDD cycle; old untouched source files should not be passed as
 cycle evidence.
 
-For protected Full acceptance, require wrapper provenance explicitly:
+For protected Audited or legacy Full acceptance, require wrapper provenance explicitly:
 
 ```bash
 python3 scripts/tdd_gate_check.py --require-wrapper <artifact-dir>/tdd_trace.jsonl
@@ -102,7 +104,7 @@ accidental hand-written evidence; it is not a cryptographic signature, so the
 manager must still re-run the critical command.
 
 For traces shared by multiple implementation tasks, pass `--task-id` to inspect
-one task's evidence. The Full controller performs this scoping automatically;
+one task's evidence. The Audited/legacy controller performs this scoping automatically;
 without it, a global RED/GREEN pair could accidentally combine different task
 lifecycles.
 
@@ -139,7 +141,7 @@ Substitute boundaries:
 - Substitute evidence must still be concrete and chronological: identify the
   check before editing when possible, run it after editing, and record command,
   result, and no-test reason.
-- For Full Harness, include substitute events in the TDD trace so a checker or
+- For Audited or legacy Full, include substitute events in the TDD trace so a checker or
   evaluator can distinguish an accepted substitute from missing RED evidence.
 
 ## Runtime Wrapper
@@ -166,8 +168,8 @@ context is the lightweight failure scene to pass between manager and workers;
 do not move entire workspace telemetry between agents when the failure scene is
 enough.
 
-For Full mode, the context update uses the same artifact lock and before/after digest journal
-as `harnessctl`; it must not invalidate a sealed run. Once continuation ownership is active,
+For Audited or legacy Full mode, the context update uses the same artifact lock and
+before/after digest journal as `harnessctl`; it must not invalidate a sealed run. Once continuation ownership is active,
 the wrapper checks actor ID and owner epoch before executing the command and again before
 committing context. Omit these flags only while the continuation is still unclaimed.
 
@@ -221,4 +223,6 @@ The manager cannot accept a code behavior change when:
 
 Sub-agent reports are evidence for manager acceptance. They are not final acceptance.
 
-For risky Full Harness implementation, the evaluator report should include `Testing Gate Evidence Checked` and explicitly state whether the testing gate records were present, valid, and mapped to acceptance criteria.
+For risky Audited or legacy Full implementation, the evaluator report should include
+`Testing Gate Evidence Checked` and explicitly state whether the testing gate records were
+present, valid, and mapped to acceptance criteria.

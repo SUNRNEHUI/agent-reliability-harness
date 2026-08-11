@@ -45,4 +45,4 @@ chosen mode requires it.
 
 ---
 
-*Master Prompt v9.1.0 | 2026-08-02*
+*Master Prompt v9.2.0 | 2026-08-11*

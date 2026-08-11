@@ -58,7 +58,15 @@ TASK_STATUSES = {
 }
 
 ACCEPTANCE_STATUSES = {"pending", "pass", "fail", "blocked", "scoped_out"}
-MODES = {"direct", "lite", "full"}
+AUDITED_MODES = {"audited", "full"}
+MODES = {"audited", "direct", "lite", "full"}
+
+
+def is_audited_mode(mode: object) -> bool:
+    """Return whether mode uses the Audited state machine, including legacy Full."""
+    return mode in AUDITED_MODES
+
+
 VERIFICATION_GATE_MODES = {
     "strict_tdd",
     "test_first_evidence",

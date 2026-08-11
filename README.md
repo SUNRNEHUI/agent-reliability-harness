@@ -7,7 +7,7 @@ Claude Code, Grok, and other file-and-shell capable agents. It uses the runtime'
 for ordinary work, materializes a compact provider-neutral contract only when work must
 survive a boundary, and adds audit controls only when risk requires them.
 
-Current version: **v9.1.0** · 2026-08-02
+Current version: **v9.2.0** · 2026-08-11
 
 ---
 
@@ -42,11 +42,13 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 - **Audited extensions:** retain typed receipts, Production State Witness, protected TDD
   chronology, evaluator separation, and stronger fencing for high-risk work.
 - **Legacy compatibility:** continue to validate and resume `handoff-v1` Full artifacts.
-- **Adapter-local routing:** keep provider and model slugs outside the portable core.
+- **Adapter-local routing:** keep provider and model slugs outside the portable core; use a
+  configured `luna_worker` only for bounded execution that benefits from dispatch.
 - **Progress Circuit Breaker:** require new evidence, an artifact change, a test result, or a
-  binding decision; stop after two no-progress cycles without a new diagnosis.
-- **Clean packaging:** exclude repository docs, generated `.harness/` and `workspace/`
-  artifacts, caches, sessions, and private configuration.
+  binding decision that advances a named acceptance boundary; stop after two no-progress
+  cycles without a new diagnosis.
+- **Lean packaging:** exclude duplicate prompts, repository tests/evals, generated
+  `.harness/` and `workspace/` artifacts, caches, sessions, and private configuration.
 
 ---
 
@@ -67,7 +69,7 @@ handoff can be Portable; a high-risk one-file change can be Audited.
 
 Use this skill when the request involves:
 
-- saying "You are the main agent" or "write a harness" to activate the density router
+- saying "You are the main agent" or "write a harness" to activate one mode gate
 - writing a harness to solve this problem
 - durable handoff or cross-model continuation
 - resumable execution or a long external wait
@@ -75,8 +77,9 @@ Use this skill when the request involves:
 - 分头处理 / 分别派 / 拆给不同 agent
 - evidence-based acceptance or a high fake-success risk
 
-The trigger selects the skill, not the heaviest mode. Ordinary work should still remain
-Native, and workers should be used only when parallel ownership is real.
+The trigger selects the skill, not a worker or the heaviest mode. Ordinary implementation,
+planning, and testing remain Native when the repository workflow is sufficient. Workers
+are used only when their bounded ownership saves more than coordination costs.
 
 ---
 
@@ -95,20 +98,24 @@ Native Plan
 The manager should choose the lightest mode that preserves safe execution and honest
 completion. Do not mirror a native Plan into JSON or Markdown.
 
+Use `define-goal` or an available durable goal tool only when the user requests goal-backed
+execution or the stopping condition is not measurable yet. Goal definition does not itself
+authorize Portable state, Audited controls, or a worker.
+
 ## Progress And Codex Routing
 
-Progress means new evidence, an artifact change, a test result, or a binding decision. Once
-a reversible action can distinguish the current hypotheses, execute it instead of extending
-the plan. After two no-progress cycles, record facts, assumptions, the current hypothesis,
-and one falsifying experiment. If it yields no evidence, stop that reasoning chain.
+Progress means new evidence, an artifact change, a test result, or a binding decision that
+advances a named `done_when` criterion or critical-path blocker. Generated reports, package
+rebuilds, inventory, and auxiliary checks do not count unless that criterion requires them.
+After two no-progress cycles, run one falsifying experiment; if it yields no evidence, stop
+that reasoning chain.
 
-When explicit Codex routing is available, the configured policy keeps the parent on Sol
-`max` for planning and acceptance, and uses Luna `max` for justified long implementation,
-integration, and mechanically verifiable execution. Sol workers remain bounded to one
-planning, fresh-diagnosis, or concrete high-risk review question. Stagnation never raises
-reasoning effort automatically. New runs record
-`progress-bounded-v2`; legacy `cost-aware-v1` Audited runs keep their sealed v1 profile map
-so resume validation does not reinterpret historical dispatches.
+When explicit Codex routing is available, the parent owns planning and acceptance at its
+configured Sol effort. A locally installed `luna_worker` may run Luna `max` for justified
+long, mechanical, or independently verifiable execution. Custom-agent calls use a
+self-contained `fork_turns=none` task. Saying "main agent" does not spawn it automatically.
+Review starts only after a concrete candidate exists, and retry requires a new diagnosis or
+evidence. Requested and resolved models are recorded separately.
 
 ---
 
@@ -250,6 +257,21 @@ or set `model_catalog_json` as part of skill installation. If Luna is unavailabl
 the requested route in evidence, record the runtime-resolved fallback separately, and do
 not claim that a Luna worker ran.
 
+An optional named worker can make the bounded execution route explicit:
+
+```toml
+# ~/.codex/agents/luna-worker.toml
+name = "luna_worker"
+description = "Handle clearly bounded tasks"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "max"
+developer_instructions = "Execute only the delegated scope, return concise evidence, and do not expand scope."
+```
+
+The skill never creates this personal file. When it is installed and recognized by Codex,
+the adapter uses `fork_turns=none` and sends a self-contained contract. Otherwise it falls
+back without treating the missing agent as a task failure.
+
 ---
 
 ## Migration From Earlier Names
@@ -272,27 +294,11 @@ The runtime package includes:
 
 - `VERSION`
 - `SKILL.md`
-- `master-prompt.md`
-- `sub-prompt.md`
 - `agents/openai.yaml`
 - `adapters/`
-- `references/`
-  - `references/portable-contract.md`
-  - `references/harness-protocol.md`
-  - `references/state-memory-boundary.md`
-  - `references/model-routing.md`
-- `templates/`
-- `scripts/harnessctl.py`
-- `scripts/init_run.py`
-- `scripts/harness_test_run.py`
-- `scripts/protocol_regression_harness.py`
-- `scripts/runtime_profiles.py`
-- `scripts/status.py`
-- `scripts/tdd_gate_check.py`
-- `scripts/validate_report.py`
-- `templates/lite_plan.md`
-- `templates/lite_review.md`
-- `templates/tdd_trace.jsonl`
+- the references directly loaded by `SKILL.md` or the Audited protocol
+- the controller, validator, status, model-routing, TDD, and State Witness scripts
+- only templates copied by runtime commands or required by worker contracts
 
 The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`; this section summarizes the runtime categories.
 
@@ -302,6 +308,9 @@ It intentionally excludes:
 - `README.zh-CN.md`
 - `scripts/sync_version.py`
 - `scripts/package_skill.py`
+- duplicate `master-prompt.md` and `sub-prompt.md`
+- repository regression tests, protocol eval cases, and skill self-scoring tools
+- source-only references and templates with no runtime consumer
 - `.git`
 - generated `.harness/` artifacts
 - generated workspace artifacts
@@ -361,7 +370,7 @@ This creates only:
 └── capsule.md
 ```
 
-For Audited controls or legacy Full workflows, initialize the full record set:
+For a new Audited run, initialize the protected record set:
 
 ```bash
 python3 scripts/init_run.py \
@@ -388,6 +397,10 @@ This creates:
     ├── 1.2-backend.md
     └── 1.3-tests.md
 ```
+
+The generated `run_state.json` records `mode: audited`. Existing `mode: full`
+`handoff-v1` artifacts remain readable and resumable, but new examples and defaults do not
+create that legacy mode.
 
 ---
 
@@ -498,6 +511,19 @@ they fit the selected mode and measured risk.
 ---
 
 ## Release History
+
+### v9.2.0
+
+- Made Native a true one-decision fast path: no reference loading, artifacts, model routing,
+  or worker dispatch solely because the skill triggered.
+- Added conditional `luna_worker` routing for self-contained `fork_turns=none` execution;
+  the parent still owns planning and final acceptance.
+- Made new Audited artifacts record `mode: audited` while preserving legacy `mode: full`
+  validation, discovery, TDD digest protection, handoff, and resume.
+- Removed duplicate prompts, development tests/evals, self-scoring tools, and unused source
+  templates from the runtime package without deleting repository regression assets.
+- Tightened progress to the named acceptance boundary and added an explicit Portable
+  checkpoint capsule budget.
 
 ### v9.1.0
 

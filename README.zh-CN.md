@@ -6,7 +6,7 @@ Agent Reliability Harness 是一个面向 Codex、Claude Code、Grok 及其他�
 shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运行时原生 Plan；只有
 任务必须跨越边界时才物化紧凑、provider-neutral 的合同；只有风险需要时才增加审计控制。
 
-当前版本：**v9.1.0** · 2026-08-02
+当前版本：**v9.2.0** · 2026-08-11
 
 ---
 
@@ -39,11 +39,12 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 - **Audited 扩展：** 高风险任务保留 typed receipts、Production State Witness、受保护
   TDD chronology、evaluator separation 和更强 fencing。
 - **旧格式兼容：** 继续校验和恢复 `handoff-v1` Full artifact。
-- **Adapter-local 路由：** provider 和 model slug 不进入 Portable 核心。
-- **进度熔断：** 每轮必须产生新证据、artifact 变更、测试结果或约束性决策；连续
-  两轮无进展且没有新诊断时停止。
-- **干净打包：** 排除仓库文档、生成的 `.harness/` / `workspace/` artifact、缓存、
-  session 和私有配置。
+- **Adapter-local 路由：** provider 和 model slug 不进入 Portable 核心；只有派发收益
+  明确时才使用已配置的 `luna_worker` 执行有界任务。
+- **进度熔断：** 每轮必须产生推进明确验收边界的新证据、artifact 变更、测试结果或
+  约束性决策；连续两轮无进展且没有新诊断时停止。
+- **精简打包：** 排除重复 prompt、仓库测试/eval、生成的 `.harness/` / `workspace/`
+  artifact、缓存、session 和私有配置。
 
 ---
 
@@ -64,7 +65,7 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 
 当请求涉及以下能力时使用本 skill：
 
-- 输入“你是主 agent”或“写一个 harness”以启动密度路由
+- 输入“你是主 agent”或“写一个 harness”以启动一次模式判断
 - “写一个 harness 来解决这个问题”
 - 持久 handoff 或跨模型续接
 - 可续跑执行或长时间外部等待
@@ -72,8 +73,8 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 - 分头处理 / 分别派 / 拆给不同 agent
 - 证据化验收或高假完成风险
 
-触发 skill 不等于选择最重模式。普通工作仍应保持 Native；只有真实存在并行责任边界时
-才使用 worker。
+触发 skill 不等于选择 worker 或最重模式。仓库现有流程足够时，普通实现、规划和测试
+保持 Native。只有 worker 的有界责任能带来大于协调成本的收益时才派发。
 
 ---
 
@@ -92,18 +93,20 @@ Native Plan
 主代理应选择能够保证安全执行和真实完成的最轻模式。不要把原生 Plan 再复制到 JSON
 或 Markdown。
 
+只有用户要求持久目标，或停止条件还无法度量时，才使用 `define-goal` 或可用的持久目标
+工具。定义 goal 本身不会授权 Portable 状态、Audited 控制或 worker。
+
 ## 进度与 Codex 路由
 
-进展只包括新证据、artifact 变更、测试结果或约束性决策。一旦存在能区分当前假设的
-可逆操作，就执行它，不继续扩展计划。连续两轮无进展后，记录事实、假设、当前假说和
-一个证伪实验；仍没有新证据时停止该推理链。
+进展只包括能推进明确 `done_when` 或关键路径 blocker 的新证据、artifact 变更、测试
+结果或约束性决策。生成报告、重建 package、扩大清单和辅助检查不推进该验收边界时不算
+进展。连续两轮无进展后只运行一个证伪实验；仍没有新证据就停止该推理链。
 
-当 Codex 支持显式路由时，当前策略让父 Agent 使用 Sol `max` 负责规划和验收，并让
-Luna `max` 承担确有必要的长时间实现、集成和机械可验证执行。Sol worker 仍被限制为
-一次规划、新诊断或具体高风险审查问题。停滞不会自动提高 reasoning effort。新 run
-写入 `progress-bounded-v2`；
-旧 `cost-aware-v1` Audited run 保留其封存的 v1 profile map，续接校验不会重新解释历史
-dispatch。
+当 Codex 支持显式路由时，父 Agent 按其已配置的 Sol effort 负责规划和验收。本机已安装
+的 `luna_worker` 可以用 Luna `max` 执行确有派发价值的长任务、机械任务或独立可验证任务。
+自定义 Agent 调用使用自包含的 `fork_turns=none` 任务。说“你是主 agent”不会自动启动
+它；只有具体候选结果出现后才审查，只有新诊断或新证据出现后才重试。requested model
+和 resolved model 分开记录。
 
 ---
 
@@ -238,6 +241,21 @@ default_subagent_reasoning_effort = "max"
 设置 `model_catalog_json`。如果 Luna 不可用，应保留 requested route，并单独记录运行时
 实际解析的 fallback；不能声称 Luna worker 已经运行。
 
+可选的命名 worker 可以把有界执行通道显式化：
+
+```toml
+# ~/.codex/agents/luna-worker.toml
+name = "luna_worker"
+description = "处理边界清晰任务"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "max"
+developer_instructions = "只执行明确委派任务，返回简洁证据结果，不扩大范围。"
+```
+
+Skill 不会创建这个个人配置文件。Codex 已安装并识别它时，adapter 使用
+`fork_turns=none` 并发送自包含任务；缺少它时正常 fallback，不把缺少命名 Agent 当作
+任务失败。
+
 ---
 
 ## 从旧名称迁移
@@ -260,27 +278,11 @@ runtime 包包含：
 
 - `VERSION`
 - `SKILL.md`
-- `master-prompt.md`
-- `sub-prompt.md`
 - `agents/openai.yaml`
 - `adapters/`
-- `references/`
-  - `references/portable-contract.md`
-  - `references/harness-protocol.md`
-  - `references/state-memory-boundary.md`
-  - `references/model-routing.md`
-- `templates/`
-- `scripts/harnessctl.py`
-- `scripts/init_run.py`
-- `scripts/harness_test_run.py`
-- `scripts/protocol_regression_harness.py`
-- `scripts/runtime_profiles.py`
-- `scripts/status.py`
-- `scripts/tdd_gate_check.py`
-- `scripts/validate_report.py`
-- `templates/lite_plan.md`
-- `templates/lite_review.md`
-- `templates/tdd_trace.jsonl`
+- `SKILL.md` 或 Audited 协议直接加载的 references
+- controller、validator、status、模型路由、TDD 和 State Witness scripts
+- 只有 runtime 命令实际复制或 worker contract 需要的 templates
 
 权威文件清单以 `scripts/package_skill.py:RUNTIME_FILES` 为准；本节只概括 runtime 类别。
 
@@ -290,6 +292,9 @@ runtime 包会排除：
 - `README.zh-CN.md`
 - `scripts/sync_version.py`
 - `scripts/package_skill.py`
+- 重复的 `master-prompt.md` 和 `sub-prompt.md`
+- 仓库回归测试、协议 eval case 和 skill 自评分工具
+- 没有 runtime consumer 的 source-only references 与 templates
 - `.git`
 - 生成的 `.harness/` artifact
 - 生成的 workspace artifact
@@ -349,7 +354,7 @@ python3 scripts/harnessctl.py materialize /path/to/project \
 └── capsule.md
 ```
 
-需要 Audited 控制或 legacy Full 工作流时，初始化完整记录：
+新建 Audited run 时，初始化受保护记录：
 
 ```bash
 python3 scripts/init_run.py \
@@ -376,6 +381,9 @@ python3 scripts/init_run.py \
     ├── 1.2-backend.md
     └── 1.3-tests.md
 ```
+
+生成的 `run_state.json` 写入 `mode: audited`。既有 `mode: full` `handoff-v1`
+artifact 仍可读取和恢复，但新示例与默认值不再创建该 legacy mode。
 
 ---
 
@@ -485,6 +493,18 @@ Native / Portable / Audited 选择始终先执行。只有支持方法适合当�
 ---
 
 ## 版本历史
+
+### v9.2.0
+
+- 将 Native 做成真正的一次判断快速路径：不会仅因 skill 触发就加载 reference、创建
+  artifact、路由模型或派发 worker。
+- 新增条件式 `luna_worker` 路由，用自包含的 `fork_turns=none` 任务执行；父 Agent 仍
+  负责规划与最终验收。
+- 新 Audited artifact 写入 `mode: audited`，同时保留旧 `mode: full` 的校验、发现、
+  TDD digest 保护、handoff 和 resume。
+- 从 runtime 包移除重复 prompt、开发测试/eval、自评分工具和未被消费的 source template，
+  但不删除仓库回归资产。
+- 将进展绑定到明确验收边界，并为 Portable checkpoint 增加显式 capsule 预算。
 
 ### v9.1.0
 

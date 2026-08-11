@@ -9,6 +9,7 @@ from pathlib import Path
 
 from harness_schema import ACCEPTANCE_STATUSES as VALID_ACCEPTANCE_STATUSES
 from harness_schema import TERMINAL_RUN_STATUSES
+from harness_schema import is_audited_mode
 from harnessctl import (
     validate_active_tdd_gates,
     validate_canonical_state_digests,
@@ -145,7 +146,7 @@ def confidence_level(
 ) -> str:
     if integrity_errors or blockers or conflicts or registry_error or acceptance_counts["fail"] or acceptance_counts["blocked"]:
         return "blocked"
-    if mode == "full" and registry_status != "available":
+    if is_audited_mode(mode) and registry_status != "available":
         return "unknown"
     if acceptance_counts["pending"]:
         return "medium" if done == total and total > 0 else "low"
@@ -176,9 +177,9 @@ def next_verification(
         return "repair accepted run state or acceptance registry"
     if integrity_errors:
         return "repair artifact integrity errors"
-    if mode == "full" and registry_status == "missing":
+    if is_audited_mode(mode) and registry_status == "missing":
         return "create or locate acceptance_registry.json"
-    if mode == "full" and registry_status == "unreadable":
+    if is_audited_mode(mode) and registry_status == "unreadable":
         return "repair acceptance_registry.json"
     if acceptance_counts["fail"] or acceptance_counts["blocked"]:
         return "repair failing or blocked acceptance criteria"
@@ -256,11 +257,11 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
     registry_status = "not_applicable"
     registry: dict[str, object] | None = None
     registry_path: Path | None = None
-    if state_path is not None and mode == "full":
+    if state_path is not None and is_audited_mode(mode):
         registry_path = state_path.parent / "acceptance_registry.json"
         registry_status, registry = load_acceptance_registry(registry_path)
     acceptance_counts, acceptance_gaps, registry_error = acceptance_rollup(registry)
-    if mode == "full":
+    if is_audited_mode(mode):
         if registry_status == "available":
             lines.append(
                 "Acceptance: "
@@ -284,7 +285,7 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
     lines.append("Evidence gaps: " + ("; ".join(evidence_gaps) if evidence_gaps else "none"))
 
     integrity_errors = validate_run_state(state_path) if state_path is not None else []
-    if state_path is not None and mode == "full":
+    if state_path is not None and is_audited_mode(mode):
         if registry_path is not None and registry_status == "available":
             integrity_errors.extend(validate_acceptance_registry(registry_path))
             integrity_errors.extend(validate_cross_file_invariants(state_path, registry_path))

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and mutate Full Harness state through guarded, auditable commands."""
+"""Validate and mutate Audited or legacy Full state through guarded commands."""
 
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ from harness_schema import (
     TASK_TRANSITIONS,
     TERMINAL_RUN_STATUSES,
     VERIFICATION_TIERS,
+    is_audited_mode,
 )
 from runtime_profiles import model_profiles_for
 from runtime_state import append_jsonl, locked, mutate_json
@@ -952,7 +953,7 @@ def discover_active_runs(path: Path, selector: str = "") -> dict[str, object]:
         except ValueError as exc:
             corrupt.append({"artifact_dir": str(state_path.parent.resolve()), "error": str(exc)})
             continue
-        if str(state.get("mode") or "full") != "full":
+        if not is_audited_mode(state.get("mode") or "full"):
             continue
         item = {
             "artifact_dir": str(state_path.parent.resolve()),
@@ -980,49 +981,49 @@ def select_unique_active_run(path: Path, selector: str = "") -> Path:
     corrupt = discovered["corrupt"]
     if corrupt:
         locations = ", ".join(str(item["artifact_dir"]) for item in corrupt)
-        raise ValueError(f"corrupt Full Harness run state found: {locations}")
+        raise ValueError(f"corrupt Audited/legacy Full run state found: {locations}")
     runs = discovered["runs"]
     if not isinstance(runs, list) or not runs:
-        raise ValueError("no active Full Harness run found")
+        raise ValueError("no active Audited or legacy Full run found")
     if len(runs) != 1:
         names = ", ".join(str(item.get("slug")) for item in runs if isinstance(item, dict))
-        raise ValueError(f"multiple active Full Harness runs found: {names}")
+        raise ValueError(f"multiple active Audited/legacy Full runs found: {names}")
     return Path(str(runs[0]["artifact_dir"])).resolve()
 
 
 def select_active_protocol_artifact(path: Path, selector: str = "") -> tuple[str, Path]:
     portable, portable_corrupt = portable_candidates(path, selector)
     discovered = discover_active_runs(path, selector)
-    full_corrupt = discovered["corrupt"]
-    if portable_corrupt or full_corrupt:
+    audited_corrupt = discovered["corrupt"]
+    if portable_corrupt or audited_corrupt:
         details = list(portable_corrupt)
         details.extend(
             f"{item['artifact_dir']}: {item['error']}"
-            for item in full_corrupt
+            for item in audited_corrupt
             if isinstance(item, dict)
         )
         raise ValueError("corrupt harness state found: " + " | ".join(details))
 
-    full = discovered["runs"]
-    full = full if isinstance(full, list) else []
+    audited = discovered["runs"]
+    audited = audited if isinstance(audited, list) else []
     if len(portable) > 1:
         names = ", ".join(item.name for item in portable)
         raise ValueError(f"multiple active Portable Contracts found: {names}")
-    if len(full) > 1:
+    if len(audited) > 1:
         names = ", ".join(
-            str(item.get("slug")) for item in full if isinstance(item, dict)
+            str(item.get("slug")) for item in audited if isinstance(item, dict)
         )
-        raise ValueError(f"multiple active Full Harness runs found: {names}")
-    if portable and full:
-        full_path = str(full[0].get("artifact_dir")) if isinstance(full[0], dict) else "unknown"
+        raise ValueError(f"multiple active Audited/legacy Full runs found: {names}")
+    if portable and audited:
+        audited_path = str(audited[0].get("artifact_dir")) if isinstance(audited[0], dict) else "unknown"
         raise ValueError(
             "ambiguous active harness protocols: Portable "
-            f"{portable[0]} and Audited/legacy Full {full_path}; pass an explicit artifact path"
+            f"{portable[0]} and Audited/legacy Full {audited_path}; pass an explicit artifact path"
         )
     if portable:
         return "portable", portable[0]
-    if full and isinstance(full[0], dict):
-        return "full", Path(str(full[0]["artifact_dir"])).resolve()
+    if audited and isinstance(audited[0], dict):
+        return "audited", Path(str(audited[0]["artifact_dir"])).resolve()
     raise ValueError("no active Portable or Audited Harness run found")
 
 
@@ -1254,7 +1255,7 @@ def portable_checkpoint(args: argparse.Namespace, artifact_dir: Path) -> int:
             writer_role="manager",
             scope="global",
         )
-        write_portable_capsule(artifact_dir, contract)
+        write_portable_capsule(artifact_dir, contract, max_chars=args.max_chars)
         print(
             json.dumps(
                 {
@@ -3352,7 +3353,9 @@ def build_parser() -> argparse.ArgumentParser:
     lesson_parser.add_argument("--owner-epoch", type=int)
     lesson_parser.set_defaults(handler=record_lesson)
 
-    discover_parser = subparsers.add_parser("discover", help="Discover active Full Harness runs.")
+    discover_parser = subparsers.add_parser(
+        "discover", help="Discover active Audited or legacy Full runs."
+    )
     discover_parser.add_argument("path", type=Path)
     discover_parser.add_argument("--run", default="")
     discover_parser.set_defaults(handler=discover_runs)
@@ -3373,6 +3376,7 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint_parser.add_argument("--decision", default="")
     checkpoint_parser.add_argument("--decision-reason", default="")
     checkpoint_parser.add_argument("--evidence-file", action="append", default=[])
+    checkpoint_parser.add_argument("--max-chars", type=int, default=DEFAULT_CAPSULE_MAX_CHARS)
     checkpoint_parser.add_argument("--reason", required=True)
     checkpoint_parser.set_defaults(handler=checkpoint_run)
 

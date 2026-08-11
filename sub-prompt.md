@@ -27,4 +27,4 @@ actions, budget exhaustion, or two verification failures without a new diagnosis
 
 ---
 
-*Sub-Agent Prompt v9.1.0 | 2026-08-02*
+*Sub-Agent Prompt v9.2.0 | 2026-08-11*

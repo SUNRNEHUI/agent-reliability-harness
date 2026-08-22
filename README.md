@@ -7,7 +7,7 @@ Claude Code, Grok, and other file-and-shell capable agents. It uses the runtime'
 for ordinary work, materializes a compact provider-neutral contract only when work must
 survive a boundary, and adds audit controls only when risk requires them.
 
-Current version: **v9.2.0** · 2026-08-11
+Current version: **v9.2.0** · 2026-08-22
 
 ---
 
@@ -47,6 +47,11 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 - **Progress Circuit Breaker:** require new evidence, an artifact change, a test result, or a
   binding decision that advances a named acceptance boundary; stop after two no-progress
   cycles without a new diagnosis.
+- **Composable engineering workflow:** reuse active repository instructions or an available
+  matching coding skill for implementation and verification; do not copy or require a named
+  companion skill.
+- **Complexity-proportional execution:** keep small work in the main thread; for large work,
+  plan once, delegate independent modules, and track worker status and evidence.
 - **Lean packaging:** exclude duplicate prompts, repository tests/evals, generated
   `.harness/` and `workspace/` artifacts, caches, sessions, and private configuration.
 
@@ -62,6 +67,8 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 
 Parallelism is independent of mode. A large sequential task can remain Native; a small
 handoff can be Portable; a high-risk one-file change can be Audited.
+Small, clear work stays in the current thread. Large work uses multiple agents only when it
+contains independent module or ownership boundaries whose benefit exceeds coordination cost.
 
 ---
 
@@ -89,7 +96,8 @@ are used only when their bounded ownership saves more than coordination costs.
 Native Plan
 -> define outcome / constraints / done_when / approval boundary
 -> choose Native / Portable / Audited
--> execute, optionally with bounded workers
+-> execute directly, or split independent modules across bounded workers
+-> track worker status and evidence in the runtime plan
 -> stop or re-diagnose after two no-progress cycles
 -> verify against observable evidence
 -> checkpoint or hand off only at a durable boundary
@@ -214,14 +222,23 @@ flow or visible evidence when those tiers are available.
 
 ## Installation
 
-Clone the repository:
+Install from the repository with the generic Agent Skills installer:
+
+```bash
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+```
+
+The installer discovers the canonical package under `skills/`. To install from a local
+checkout instead:
 
 ```bash
 git clone https://github.com/SUNRNEHUI/agent-reliability-harness.git
 cd agent-reliability-harness
+npx skills add . --skill "agent-reliability-harness"
 ```
 
-Create a clean runtime package:
+For a manual or development installation, verify and copy the same canonical package:
 
 ```bash
 python3 scripts/sync_version.py
@@ -238,7 +255,8 @@ rsync -a --delete --exclude workspace --exclude .harness \
 python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
 ```
 
-The runtime package contains only the files needed by the skill at execution time.
+The copy is byte-for-byte derived from `skills/agent-reliability-harness/`; there is no
+second runtime file list to maintain.
 
 Recommended Codex defaults for this routing policy:
 
@@ -290,7 +308,7 @@ This avoids duplicate skill entries that describe the same workflow.
 
 ## Runtime Package Contents
 
-The runtime package includes:
+`skills/agent-reliability-harness/` is the complete distributable package. It includes:
 
 - `VERSION`
 - `SKILL.md`
@@ -300,7 +318,8 @@ The runtime package includes:
 - the controller, validator, status, model-routing, TDD, and State Witness scripts
 - only templates copied by runtime commands or required by worker contracts
 
-The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`; this section summarizes the runtime categories.
+The directory itself is authoritative. `scripts/package_skill.py` validates and copies it;
+it does not maintain a second allowlist.
 
 It intentionally excludes:
 
@@ -354,7 +373,7 @@ extensions only if the actual risk requires them. Worker use remains a separate 
 For new resumable work, materialize Portable v2:
 
 ```bash
-python3 scripts/harnessctl.py materialize /path/to/project \
+python3 <skill-dir>/scripts/harnessctl.py materialize /path/to/project \
   --title "Checkout Refactor" \
   --goal "Refactor checkout while preserving behavior" \
   --done-when "Checkout regression suite passes" \
@@ -373,7 +392,7 @@ This creates only:
 For a new Audited run, initialize the protected record set:
 
 ```bash
-python3 scripts/init_run.py \
+python3 <skill-dir>/scripts/init_run.py \
   --project-root /path/to/project \
   --mode audited \
   --title "Checkout Refactor" \
@@ -409,13 +428,13 @@ create that legacy mode.
 Validate a Portable contract directly:
 
 ```bash
-python3 scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
+python3 <skill-dir>/scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
 ```
 
 For Audited or legacy artifacts, validate generated reports before relying on them:
 
 ```bash
-python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
+python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
 ```
 
 Supported artifact types:
@@ -430,7 +449,7 @@ When protocol files such as `acceptance_registry.json` or `run_state.json` sit n
 For TDD-sensitive work, validate the dedicated TDD trace:
 
 ```bash
-python3 scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
+python3 <skill-dir>/scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
 ```
 
 The checker validates chronology for strict TDD, accepts test-first gap evidence when recorded, and rejects missing substitute reasons.
@@ -438,7 +457,7 @@ The checker validates chronology for strict TDD, accepts test-first gap evidence
 Use the test wrapper when available so trace events are generated by the runtime command runner rather than hand-written by an agent:
 
 ```bash
-python3 scripts/harness_test_run.py \
+python3 <skill-dir>/scripts/harness_test_run.py \
   --trace <artifact-dir>/tdd_trace.jsonl \
   --task-id 1.1 \
   --gate-mode strict_tdd \
@@ -452,8 +471,30 @@ For strict TDD cycles, `tdd_gate_check.py --source-path <file>` can add filesyst
 For CI or release gates, require the run to reach high completion confidence:
 
 ```bash
-python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
+python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
 ```
+
+---
+
+## Development
+
+The runtime and repository checks use the Python standard library:
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 tests/test_runtime_behavior.py
+python3 tests/protocol_regression_harness.py \
+  --skill-root skills/agent-reliability-harness --pretty
+python3 tests/evals/score_forward.py \
+  --cases tests/evals/forward_cases.json --results /path/to/agent-results.json
+python3 scripts/package_skill.py --verify-source
+npx --yes skills@1.5.23 add . --list
+git diff --check
+```
+
+The unit suite covers the open package contract as well as runtime behavior. The final
+`npx` check proves that a generic cross-agent installer discovers exactly the canonical
+Skill under `skills/`.
 
 ---
 
@@ -461,19 +502,24 @@ python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidenc
 
 ```text
 agent-reliability-harness/
-├── SKILL.md
+├── skills/
+│   └── agent-reliability-harness/   # complete installable Skill package
+│       ├── SKILL.md
+│       ├── VERSION
+│       ├── adapters/
+│       ├── agents/
+│       ├── references/
+│       ├── scripts/
+│       └── templates/
+├── tests/                           # repository regression tests and fixtures
+├── scripts/                         # repository packaging/version tools
+├── docs/                            # non-runtime design and legacy material
 ├── README.md
-├── README.zh-CN.md
-├── adapters/
-├── agents/
-├── references/
-├── scripts/
-├── templates/
-├── master-prompt.md
-└── sub-prompt.md
+└── README.zh-CN.md
 ```
 
-Detailed protocol material lives in `references/`. Runtime-specific guidance lives in `adapters/`.
+The `skills/` directory is the distribution boundary. Repository tests and historical
+materials remain outside it so compatible installers cannot accidentally package them.
 
 ---
 
@@ -481,11 +527,11 @@ Detailed protocol material lives in `references/`. Runtime-specific guidance liv
 
 The protocol is runtime-neutral. Adapters describe how to apply it in specific agent environments:
 
-- [Codex adapter](adapters/codex.md)
-- [Grok adapter](adapters/grok.md)
-- [Claude Code adapter](adapters/claude-code.md)
-- [Portable Contract v2](references/portable-contract.md)
-- [Audited and legacy protocol](references/harness-protocol.md)
+- [Codex adapter](skills/agent-reliability-harness/adapters/codex.md)
+- [Grok adapter](skills/agent-reliability-harness/adapters/grok.md)
+- [Claude Code adapter](skills/agent-reliability-harness/adapters/claude-code.md)
+- [Portable Contract v2](skills/agent-reliability-harness/references/portable-contract.md)
+- [Audited and legacy protocol](skills/agent-reliability-harness/references/harness-protocol.md)
 
 Adapters map native planning, worker controls, and optional model profiles to each runtime.
 They must not add provider-specific fields to the Portable contract.
@@ -514,6 +560,18 @@ they fit the selected mode and measured risk.
 
 ### v9.2.0
 
+- Moved the complete installable Skill into the open
+  `skills/agent-reliability-harness/` layout and made it the single runtime authority.
+- Separated repository tests, maintenance tools, and legacy design material from the
+  distributable package.
+- Replaced the hand-maintained runtime allowlist with whole-package verification and copy.
+- Added package-contract tests, cross-agent discovery validation, and multi-version CI.
+- Added a portable workflow-composition contract so code tasks reuse local engineering
+  rules without making any companion skill a dependency.
+- Added complexity-proportional execution: direct handling for simple work and tracked,
+  module-bounded multi-agent execution for genuinely complex work.
+- Added eight repository-only forward-routing cases and a structured scorer for independent
+  Agent behavior checks without packaging eval assets into the runtime Skill.
 - Made Native a true one-decision fast path: no reference loading, artifacts, model routing,
   or worker dispatch solely because the skill triggered.
 - Added conditional `luna_worker` routing for self-contained `fork_turns=none` execution;

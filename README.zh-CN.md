@@ -6,7 +6,7 @@ Agent Reliability Harness 是一个面向 Codex、Claude Code、Grok 及其他�
 shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运行时原生 Plan；只有
 任务必须跨越边界时才物化紧凑、provider-neutral 的合同；只有风险需要时才增加审计控制。
 
-当前版本：**v9.2.0** · 2026-08-11
+当前版本：**v9.2.0** · 2026-08-22
 
 ---
 
@@ -43,6 +43,10 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
   明确时才使用已配置的 `luna_worker` 执行有界任务。
 - **进度熔断：** 每轮必须产生推进明确验收边界的新证据、artifact 变更、测试结果或
   约束性决策；连续两轮无进展且没有新诊断时停止。
+- **可组合工程工作流：** 代码实现与验证复用当前仓库规则或可用的匹配 coding skill；
+  不复制，也不强制依赖某个具名 companion skill。
+- **按复杂度执行：** 简单任务留在主线程直接完成；大型任务只拆独立模块，并跟踪 worker
+  状态与证据。
 - **精简打包：** 排除重复 prompt、仓库测试/eval、生成的 `.harness/` / `workspace/`
   artifact、缓存、session 和私有配置。
 
@@ -58,6 +62,8 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 
 并行与模式相互独立。大型顺序任务可以保持 Native；小型交接可以是 Portable；
 一个文件的高风险变更也可以是 Audited。
+简单明确的任务留在当前线程。大型任务只有在存在独立模块或责任边界，且收益高于协调
+成本时才使用多个 Agent。
 
 ---
 
@@ -84,7 +90,8 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 Native Plan
 -> 定义 outcome / constraints / done_when / approval boundary
 -> 选择 Native / Portable / Audited
--> 执行；必要时使用有界 worker
+-> 直接执行，或把独立模块拆给有界 worker
+-> 在运行时 Plan 中跟踪 worker 状态与证据
 -> 连续两轮无进展时停止或重新诊断
 -> 用可观察证据验证
 -> 只在持久边界 checkpoint 或 handoff
@@ -199,14 +206,22 @@ worker self-report 和 harness score 都不是完成证据。manager 必须重�
 
 ## 安装
 
-克隆仓库：
+使用通用 Agent Skills 安装器从仓库安装：
+
+```bash
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+```
+
+安装器会发现 `skills/` 下的权威包。需要从本地 checkout 安装时：
 
 ```bash
 git clone https://github.com/SUNRNEHUI/agent-reliability-harness.git
 cd agent-reliability-harness
+npx skills add . --skill "agent-reliability-harness"
 ```
 
-生成干净的 runtime 包：
+手动安装或开发验证时，校验并复制同一个权威包：
 
 ```bash
 python3 scripts/sync_version.py
@@ -223,7 +238,7 @@ rsync -a --delete --exclude workspace --exclude .harness \
 python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
 ```
 
-runtime 包只包含 skill 运行时需要的文件。
+复制结果逐文件来自 `skills/agent-reliability-harness/`，不再维护第二份 runtime 文件清单。
 
 这套路由策略推荐使用以下 Codex 默认配置：
 
@@ -274,7 +289,7 @@ rm -rf ~/.codex/skills/agent-dispatch-harness ~/.codex/skills/multi-agent-dispat
 
 ## Runtime 包内容
 
-runtime 包包含：
+`skills/agent-reliability-harness/` 是完整的可分发包，其中包含：
 
 - `VERSION`
 - `SKILL.md`
@@ -284,7 +299,7 @@ runtime 包包含：
 - controller、validator、status、模型路由、TDD 和 State Witness scripts
 - 只有 runtime 命令实际复制或 worker contract 需要的 templates
 
-权威文件清单以 `scripts/package_skill.py:RUNTIME_FILES` 为准；本节只概括 runtime 类别。
+该目录本身就是权威边界。`scripts/package_skill.py` 只负责校验和复制，不再维护第二份白名单。
 
 runtime 包会排除：
 
@@ -338,7 +353,7 @@ Audited 扩展。是否使用 worker 仍是独立决策。
 新的可续跑任务使用 Portable v2：
 
 ```bash
-python3 scripts/harnessctl.py materialize /path/to/project \
+python3 <skill-dir>/scripts/harnessctl.py materialize /path/to/project \
   --title "Checkout Refactor" \
   --goal "重构 checkout 并保留现有行为" \
   --done-when "Checkout regression suite passes" \
@@ -357,7 +372,7 @@ python3 scripts/harnessctl.py materialize /path/to/project \
 新建 Audited run 时，初始化受保护记录：
 
 ```bash
-python3 scripts/init_run.py \
+python3 <skill-dir>/scripts/init_run.py \
   --project-root /path/to/project \
   --mode audited \
   --title "Checkout Refactor" \
@@ -392,13 +407,13 @@ artifact 仍可读取和恢复，但新示例与默认值不再创建该 legacy 
 直接校验 Portable contract：
 
 ```bash
-python3 scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
+python3 <skill-dir>/scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
 ```
 
 对于 Audited 或 legacy artifact，在使用报告结论前先校验报告结构：
 
 ```bash
-python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
+python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
 ```
 
 支持的 artifact 类型：
@@ -413,7 +428,7 @@ python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type 
 对于 TDD 敏感任务，可以校验专用 TDD trace：
 
 ```bash
-python3 scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
+python3 <skill-dir>/scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
 ```
 
 该 checker 会校验 strict TDD 的时间顺序，接受已记录的 test-first gap evidence，并拒绝缺少替代验证理由的 substitute gate。
@@ -421,7 +436,7 @@ python3 scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
 在可用时，建议通过测试包装器运行验证命令，让 trace 事件由运行时命令包装器生成，而不是由 agent 手写：
 
 ```bash
-python3 scripts/harness_test_run.py \
+python3 <skill-dir>/scripts/harness_test_run.py \
   --trace <artifact-dir>/tdd_trace.jsonl \
   --task-id 1.1 \
   --gate-mode strict_tdd \
@@ -435,8 +450,29 @@ python3 scripts/harness_test_run.py \
 对于 CI 或发布 gate，可以要求 run 达到 high completion confidence：
 
 ```bash
-python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
+python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
 ```
+
+---
+
+## 开发验证
+
+runtime 与仓库检查只依赖 Python 标准库：
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 tests/test_runtime_behavior.py
+python3 tests/protocol_regression_harness.py \
+  --skill-root skills/agent-reliability-harness --pretty
+python3 tests/evals/score_forward.py \
+  --cases tests/evals/forward_cases.json --results /path/to/agent-results.json
+python3 scripts/package_skill.py --verify-source
+npx --yes skills@1.5.23 add . --list
+git diff --check
+```
+
+单元测试同时覆盖开放包结构契约和运行时行为。最后一条 `npx` 检查证明通用跨 Agent
+安装器只会发现 `skills/` 下的唯一权威 Skill。
 
 ---
 
@@ -444,19 +480,23 @@ python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidenc
 
 ```text
 agent-reliability-harness/
-├── SKILL.md
+├── skills/
+│   └── agent-reliability-harness/   # 完整、可直接安装的 Skill 包
+│       ├── SKILL.md
+│       ├── VERSION
+│       ├── adapters/
+│       ├── agents/
+│       ├── references/
+│       ├── scripts/
+│       └── templates/
+├── tests/                           # 仓库回归测试与 fixture
+├── scripts/                         # 仓库打包和版本维护工具
+├── docs/                            # 非运行时设计与历史材料
 ├── README.md
-├── README.zh-CN.md
-├── adapters/
-├── agents/
-├── references/
-├── scripts/
-├── templates/
-├── master-prompt.md
-└── sub-prompt.md
+└── README.zh-CN.md
 ```
 
-详细协议材料位于 `references/`，运行时适配说明位于 `adapters/`。
+`skills/` 是分发边界。仓库测试和历史材料留在目录外，兼容安装器不会误打包这些文件。
 
 ---
 
@@ -464,11 +504,11 @@ agent-reliability-harness/
 
 协议本身不绑定特定运行时。适配文档说明如何在不同代理环境中落地：
 
-- [Codex adapter](adapters/codex.md)
-- [Grok adapter](adapters/grok.md)
-- [Claude Code adapter](adapters/claude-code.md)
-- [Portable Contract v2](references/portable-contract.md)
-- [Audited 与 legacy 协议](references/harness-protocol.md)
+- [Codex adapter](skills/agent-reliability-harness/adapters/codex.md)
+- [Grok adapter](skills/agent-reliability-harness/adapters/grok.md)
+- [Claude Code adapter](skills/agent-reliability-harness/adapters/claude-code.md)
+- [Portable Contract v2](skills/agent-reliability-harness/references/portable-contract.md)
+- [Audited 与 legacy 协议](skills/agent-reliability-harness/references/harness-protocol.md)
 
 适配文档把原生 planning、worker 控制和可选模型 profile 映射到不同运行时，但不能把
 provider-specific 字段加入 Portable contract。
@@ -496,6 +536,17 @@ Native / Portable / Audited 选择始终先执行。只有支持方法适合当�
 
 ### v9.2.0
 
+- 将完整可安装 Skill 迁移到开放的 `skills/agent-reliability-harness/` 布局，并把它设为
+  唯一 runtime 权威来源。
+- 将仓库测试、维护工具和历史设计材料移出可分发包。
+- 用整包校验与复制替换人工维护的 runtime 白名单。
+- 新增包结构契约测试、跨 Agent 发现验证和多 Python 版本 CI。
+- 新增可移植的工作流组合契约：代码任务复用本地工程规则，但不把任何 companion skill
+  变成硬依赖。
+- 新增按复杂度执行规则：简单任务直接处理，真正复杂的任务才使用可跟踪、按模块划分的
+  多 Agent 执行。
+- 新增 8 个仅仓库使用的前向路由场景和结构化 scorer，用独立 Agent 检查真实行为，但不把
+  eval 资产打进 runtime Skill。
 - 将 Native 做成真正的一次判断快速路径：不会仅因 skill 触发就加载 reference、创建
   artifact、路由模型或派发 worker。
 - 新增条件式 `luna_worker` 路由，用自包含的 `fork_turns=none` 任务执行；父 Agent 仍

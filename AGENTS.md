@@ -19,31 +19,29 @@
 
 ## 主要文件
 
-- `SKILL.md`：Codex skill 的入口协议和触发说明。
-- `VERSION`：当前发布版本的单一来源。
+- `skills/agent-reliability-harness/`：唯一、完整、可直接安装的 runtime Skill 包。
+- `skills/agent-reliability-harness/SKILL.md`：Skill 入口协议和触发说明。
+- `skills/agent-reliability-harness/VERSION`：当前发布版本的单一来源。
 - `README.md` / `README.zh-CN.md`：公开说明，必须保持英文和中文同步。
-- `references/portable-contract.md`：Portable v2 schema、capsule、handoff 和 resume 规则。
-- `references/harness-protocol.md`：Audited 与 legacy `handoff-v1` 协议。
-- `templates/`：Audited artifact 和 worker result 模板。
-- `scripts/harnessctl.py`：Portable 与 Audited 的 materialize/checkpoint/handoff/resume/validate 控制器。
-- `scripts/init_run.py`：初始化 Audited 或 legacy Full artifact；Portable 使用 `harnessctl materialize`。
-- `scripts/status.py`：从 `run_state.json` 派生单屏状态摘要。
-- `scripts/validate_report.py`：校验 spec、progress、lite_plan、lite_review、evaluator 和 run_state 结构。
-- `scripts/tdd_gate_check.py`：TDD trace gate 检查。
-- `scripts/test_plan_native_portable.py`：Plan-native 与 Portable v2 行为回归。
-- `scripts/protocol_regression_harness.py`：Audited/legacy 拒绝边界回归。
-- `scripts/package_skill.py`：生成 runtime-only skill 包。
+- `skills/agent-reliability-harness/references/`：运行时按需加载的协议材料。
+- `skills/agent-reliability-harness/templates/`：运行时需要的 artifact 与 worker 模板。
+- `skills/agent-reliability-harness/scripts/`：控制器、validator、status、TDD 和 witness 运行时脚本。
+- `tests/`：行为、拒绝边界和开放包结构契约测试；不得放进 runtime Skill 包。
+- `scripts/package_skill.py`：校验、复制并比较权威 `skills/` 包，不维护第二份文件白名单。
+- `scripts/sync_version.py`：从 Skill 包内的 `VERSION` 同步公开版本引用。
+- `docs/legacy/`：不进入 runtime 的历史 prompt、旧协议说明和开发工具。
 
 ## 修改规则
 
-- 修改 skill 行为时，优先改行为测试，再改 `SKILL.md`、相关 `references/`、模板和脚本。
+- 修改 skill 行为时，优先改行为测试，再改 Skill 包内的 `SKILL.md`、`references/`、模板和脚本。
 - 修改公开行为或版本时，必须同步 `README.md` 和 `README.zh-CN.md`。
-- 修改当前版本时，先改 `VERSION`，再运行 `python3 scripts/sync_version.py --fix --date YYYY-MM-DD`。
-- 修改 runtime 内容时，必须同步 `scripts/package_skill.py` 的包含/排除逻辑。
+- 修改当前版本时，先改 Skill 包内的 `VERSION`，再运行 `python3 scripts/sync_version.py --fix --date YYYY-MM-DD`。
+- `skills/agent-reliability-harness/` 目录本身就是 runtime 权威边界；新增 runtime 文件不需要再登记白名单。
+- repository-only 测试、fixture、历史文档和维护工具不得进入 Skill 包。
 - 不要把 `workspace/`、`.harness/`、缓存、session 日志、私有配置或生成 artifact 加入 runtime 包。
 - 不要把本地安装目录 `~/.codex/skills/agent-reliability-harness` 当成源码。源码以本仓库为准。
 - `README.md` 与 `README.zh-CN.md` 的标题结构必须一致。
-- `SKILL.md` 默认不超过 1200 words，`master-prompt.md` 不超过 450 words，`agents/openai.yaml` 不超过 120 words。
+- Skill 包内的 `SKILL.md` 默认不超过 750 words，`agents/openai.yaml` 不超过 120 words。
 - 保持 diff 小而聚焦，不做无关重排、格式化或重命名。
 
 ## TDD 和验证
@@ -55,25 +53,30 @@
 3. 再修改脚本或模板。
 4. 最后运行相关验证命令。
 
+修改触发、模式、delegation 或持久化路由时，还必须更新
+`tests/evals/forward_cases.json`。让一个看不到 `expected` 的独立 Agent 对原始 prompt
+输出结构化结果，再用 `tests/evals/score_forward.py` 评分；静态关键词断言不能替代该评测。
+
 常用验证命令：
 
 ```bash
-python3 scripts/test_plan_native_portable.py
-python3 scripts/test_runtime_behavior.py
-python3 scripts/protocol_regression_harness.py --skill-root . --pretty
-python3 scripts/test_handoff_resume.py
-python3 -m py_compile scripts/*.py
+python3 -m unittest discover -s tests -v
+python3 tests/test_runtime_behavior.py
+python3 tests/protocol_regression_harness.py \
+  --skill-root skills/agent-reliability-harness --pretty
+python3 -m py_compile scripts/*.py skills/agent-reliability-harness/scripts/*.py tests/*.py
 python3 scripts/package_skill.py --verify-source
 python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
 python3 scripts/package_skill.py --check /tmp/agent-reliability-harness-runtime
-python3 -m json.tool templates/run_state.json >/dev/null
+python3 -m json.tool skills/agent-reliability-harness/templates/worker_result.json >/dev/null
 git diff --check
 ```
 
 如果改动影响 TDD trace：
 
 ```bash
-python3 scripts/tdd_gate_check.py --trace templates/tdd_trace.jsonl
+python3 skills/agent-reliability-harness/scripts/tdd_gate_check.py \
+  docs/legacy/templates/tdd_trace.jsonl
 ```
 
 如果同步本地安装，必须先生成干净 runtime 包：
@@ -88,7 +91,7 @@ python3 scripts/package_skill.py --check /Users/sunrenhui/.codex/skills/agent-re
 
 发布前必须确认：
 
-- `VERSION`、`README.md`、`README.zh-CN.md` 与 `SKILL.md` 当前版本一致。
+- Skill 包内的 `VERSION`、`SKILL.md` 与中英文 README 当前版本一致。
 - release history 中英同步。
 - runtime 包能干净生成。
 - 本地安装目录与 runtime 包一致。

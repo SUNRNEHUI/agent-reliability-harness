@@ -10,7 +10,10 @@ import tempfile
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
+PACKAGE_SCRIPT = REPOSITORY_ROOT / "scripts" / "package_skill.py"
+LEGACY_TEMPLATES = REPOSITORY_ROOT / "docs" / "legacy" / "templates"
 
 
 def run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -211,7 +214,7 @@ def test_negative_validator_and_package_check() -> None:
     try:
         bad_review = temp / "lite_review.md"
         bad_review.write_text(
-            (ROOT / "templates" / "lite_review.md").read_text(encoding="utf-8").replace("blocked", "maybe"),
+            (LEGACY_TEMPLATES / "lite_review.md").read_text(encoding="utf-8").replace("blocked", "maybe"),
             encoding="utf-8",
         )
         result = run(["python3", "scripts/validate_report.py", str(bad_review), "--type", "lite_review"], check=False)
@@ -219,9 +222,9 @@ def test_negative_validator_and_package_check() -> None:
         assert "status must be one of" in result.stdout
 
         package_dir = temp / "pkg"
-        run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
+        run(["python3", str(PACKAGE_SCRIPT), "--output", str(package_dir), "--force"])
         (package_dir / "EXTRA").write_text("x", encoding="utf-8")
-        result = run(["python3", "scripts/package_skill.py", "--check", str(package_dir)], check=False)
+        result = run(["python3", str(PACKAGE_SCRIPT), "--check", str(package_dir)], check=False)
         assert result.returncode != 0
         assert "extra in install: EXTRA" in result.stdout
         (package_dir / "EXTRA").unlink()
@@ -229,7 +232,7 @@ def test_negative_validator_and_package_check() -> None:
         (package_dir / "workspace" / "preserved-run" / "run_state.json").write_text(
             "{}\n", encoding="utf-8"
         )
-        result = run(["python3", "scripts/package_skill.py", "--check", str(package_dir)], check=False)
+        result = run(["python3", str(PACKAGE_SCRIPT), "--check", str(package_dir)], check=False)
         assert result.returncode == 0, result.stdout + result.stderr
     finally:
         shutil.rmtree(temp)
@@ -239,7 +242,7 @@ def test_runtime_package_contains_state_witness_runtime() -> None:
     temp = Path(tempfile.mkdtemp(prefix="adh-test-witness-package-"))
     try:
         package_dir = temp / "pkg"
-        run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
+        run(["python3", str(PACKAGE_SCRIPT), "--output", str(package_dir), "--force"])
         for relative in (
             "references/state-witness.md",
             "scripts/state_witness_check.py",
@@ -254,8 +257,8 @@ def test_parallel_package_checks_use_isolated_temp_dirs() -> None:
     temp = Path(tempfile.mkdtemp(prefix="adh-test-parallel-package-"))
     try:
         package_dir = temp / "pkg"
-        run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
-        command = ["python3", "scripts/package_skill.py", "--check", str(package_dir)]
+        run(["python3", str(PACKAGE_SCRIPT), "--output", str(package_dir), "--force"])
+        command = ["python3", str(PACKAGE_SCRIPT), "--check", str(package_dir)]
         processes = [
             subprocess.Popen(
                 command,
@@ -318,7 +321,7 @@ def test_plan_native_entry_is_lean_and_provider_neutral() -> None:
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     metadata = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
 
-    assert len(skill.split()) <= 900
+    assert len(skill.split()) <= 750
     for term in ("Native", "Portable", "Audited", "materialize", "capsule"):
         assert term in skill
     for provider_slug in ("gpt-5.6-luna", "gpt-5.6-sol", "grok-api"):
@@ -344,7 +347,7 @@ def test_runtime_package_contains_runtime_and_excludes_development_assets() -> N
     temp = Path(tempfile.mkdtemp(prefix="arh-test-portable-package-"))
     try:
         package_dir = temp / "pkg"
-        run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
+        run(["python3", str(PACKAGE_SCRIPT), "--output", str(package_dir), "--force"])
         for relative in (
             "references/portable-contract.md",
             "references/harness-protocol.md",

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agent Reliability Harness"
-  short_description: "Progress-bounded execution with durable evidence"
-  default_prompt: "Use $agent-reliability-harness as the main agent and run one Native, Portable, or Audited mode gate. Stay Native unless durability or protected acceptance requires more. When configured and justified, use luna_worker with a self-contained fork_turns=none task for bounded long or mechanical execution; the parent retains planning and final acceptance. Never spawn solely because the user says main agent."

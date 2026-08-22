@@ -12,7 +12,8 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
 
 
 def run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
@@ -55,6 +56,38 @@ class ProgressCircuitBreakerPolicyTests(unittest.TestCase):
         ):
             self.assertIn(term, normalized)
         self.assertNotIn("Effect Reconstruction Fast Lane", skill)
+
+
+class WorkflowCompositionPolicyTests(unittest.TestCase):
+    def test_code_work_reuses_available_workflow_without_a_companion_dependency(self) -> None:
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        normalized = " ".join(skill.split()).casefold()
+
+        for term in (
+            "repository's established coding workflow",
+            "available matching coding skill",
+            "does not replace, copy, or weaken",
+            "do not require a particular companion skill by name",
+        ):
+            self.assertIn(term, normalized)
+        self.assertNotIn("coding-workflow", normalized)
+        self.assertNotIn("~/.codex", normalized)
+
+
+class ComplexityAndDelegationPolicyTests(unittest.TestCase):
+    def test_simple_work_stays_direct_and_complex_work_tracks_bounded_modules(self) -> None:
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        normalized = " ".join(skill.split()).casefold()
+
+        for term in (
+            "small and clear, execute it directly in the current thread",
+            "one runtime plan",
+            "independent module or ownership boundaries",
+            "track each worker's status and evidence",
+            "task size alone does not require durable state",
+            "coordination costs more than execution",
+        ):
+            self.assertIn(term, normalized)
 
 
 class PlanNativePortableTests(unittest.TestCase):

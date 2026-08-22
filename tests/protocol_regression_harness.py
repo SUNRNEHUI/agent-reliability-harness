@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Callable
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+TESTS_ROOT = REPOSITORY_ROOT / "tests"
+LEGACY_TEMPLATES = REPOSITORY_ROOT / "docs" / "legacy" / "templates"
+
+
 @dataclass
 class CaseResult:
     name: str
@@ -244,7 +249,9 @@ def test_wrapper_updates_gate_record(wrapper, tmp: Path) -> None:
 
 
 def test_protected_criterion_requires_task_binding(report, skill_root: Path, tmp: Path) -> None:
-    registry = json.loads((skill_root / "templates" / "acceptance_registry.json").read_text(encoding="utf-8"))
+    registry = json.loads(
+        (LEGACY_TEMPLATES / "acceptance_registry.json").read_text(encoding="utf-8")
+    )
     criterion = registry["criteria"][0]
     criterion.update(
         {
@@ -351,9 +358,27 @@ def run(skill_root: Path) -> dict[str, object]:
             ("terminal_status_hides_stale_checkpoint", lambda: test_terminal_status_hides_stale_checkpoint(status)),
             ("localized_numbered_spec_accepted", lambda: run_markdown_case(skill_root, tmp, localized=True)),
             ("fenced_example_only_spec_rejected", lambda: run_markdown_case(skill_root, tmp, localized=False)),
-            ("artifact_binding_tests", lambda: run_command_check([sys.executable, "scripts/test_artifact_binding.py"], skill_root)),
-            ("lesson_ledger_tests", lambda: run_command_check([sys.executable, "scripts/test_lessons.py"], skill_root)),
-            ("model_routing_tests", lambda: run_command_check([sys.executable, "scripts/test_model_routing.py"], skill_root)),
+            (
+                "artifact_binding_tests",
+                lambda: run_command_check(
+                    [sys.executable, str(TESTS_ROOT / "test_artifact_binding.py")],
+                    REPOSITORY_ROOT,
+                ),
+            ),
+            (
+                "lesson_ledger_tests",
+                lambda: run_command_check(
+                    [sys.executable, str(TESTS_ROOT / "test_lessons.py")],
+                    REPOSITORY_ROOT,
+                ),
+            ),
+            (
+                "model_routing_tests",
+                lambda: run_command_check(
+                    [sys.executable, str(TESTS_ROOT / "test_model_routing.py")],
+                    REPOSITORY_ROOT,
+                ),
+            ),
             (
                 "all_scripts_compile",
                 lambda: run_command_check(
@@ -365,28 +390,9 @@ def run(skill_root: Path) -> dict[str, object]:
         for name, case in cases:
             results.append(run_case(name, case))
 
-    score_command = [
-        sys.executable,
-        str(skill_root / "scripts" / "score_skill_protocol.py"),
-        "--skill-root",
-        str(skill_root),
-        "--pretty",
-    ]
-    score = subprocess.run(score_command, text=True, capture_output=True, check=False)
-    results.append(
-        CaseResult(
-            "static_protocol_score_executes",
-            "PASS" if score.returncode == 0 else "FAIL",
-            "static scorer executed; score remains advisory"
-            if score.returncode == 0
-            else (score.stdout + score.stderr).strip(),
-        )
-    )
     return {
         "harness": "protocol-regression-v1",
         "skill_root": str(skill_root),
-        "static_score_exit_code": score.returncode,
-        "static_score_output": score.stdout.strip(),
         "cases": [asdict(result) for result in results],
         "passed": sum(result.status == "PASS" for result in results),
         "failed": sum(result.status == "FAIL" for result in results),

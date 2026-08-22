@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -10,7 +11,9 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
+PACKAGE_SCRIPT = REPOSITORY_ROOT / "scripts" / "package_skill.py"
 INSTALL = Path.home() / ".codex" / "skills" / "agent-reliability-harness"
 
 
@@ -343,10 +346,13 @@ none
         )
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    @unittest.skipUnless(
+        os.environ.get("ARH_VERIFY_INSTALLED_SKILL") == "1",
+        "set ARH_VERIFY_INSTALLED_SKILL=1 to compare the user-level installation",
+    )
     def test_runtime_package_matches_install(self) -> None:
-        if not INSTALL.is_dir():
-            self.skipTest(f"runtime skill is not installed at {INSTALL}")
-        result = run("python3", "scripts/package_skill.py", "--check", str(INSTALL))
+        self.assertTrue(INSTALL.is_dir(), f"runtime skill is not installed at {INSTALL}")
+        result = run("python3", str(PACKAGE_SCRIPT), "--check", str(INSTALL))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 

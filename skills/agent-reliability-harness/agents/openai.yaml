@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Reliability Harness"
+  short_description: "Progress-bounded execution with durable evidence"
+  default_prompt: "Use $agent-reliability-harness to keep small work direct, plan and track large independent modules with bounded workers, and choose Native, Portable, or Audited without unnecessary durability; use luna_worker only when configured and justified, while the parent retains integration and final acceptance."

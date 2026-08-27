@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-SKILL_NAME = "agent-reliability-harness"
+SKILL_NAME = "agent-harness"
 SKILL_ROOT = ROOT / "skills" / SKILL_NAME
 
 
@@ -38,7 +38,7 @@ class SkillPackageTests(unittest.TestCase):
     def test_openai_metadata_invokes_the_canonical_skill(self) -> None:
         text = (SKILL_ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
         self.assertIn(f"${SKILL_NAME}", text)
-        self.assertIn('display_name: "Agent Reliability Harness"', text)
+        self.assertIn('display_name: "Agent Harness"', text)
 
     def test_runtime_package_contains_required_entrypoints(self) -> None:
         required = (
@@ -75,7 +75,7 @@ class SkillPackageTests(unittest.TestCase):
     def test_readmes_document_generic_skill_installation(self) -> None:
         command = (
             "npx skills add "
-            "https://github.com/SUNRNEHUI/agent-reliability-harness"
+            "https://github.com/SUNRNEHUI/agent-harness"
         )
         named_command = f'{command} --skill "{SKILL_NAME}"'
         for filename in ("README.md", "README.zh-CN.md"):

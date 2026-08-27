@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Harness"
+  short_description: "Compile intent into bounded, verifiable harness contracts"
+  default_prompt: "Use $agent-harness to first synthesize my intent into a reviewable contract covering outcome, done_when, scope, edge cases, approvals, defaults, open decisions, and evidence; only then choose Native, Portable, or Audited and dispatch when ready. Keep the parent/main on gpt-5.6-sol high; explicit delegation uses one bounded luna_worker on gpt-5.6-luna max when configured, with ordinary/heavy implementation using that worker by default. Parallelize only independent modules, keep coupled writes serial or single-owner, prevent recursion, preserve goal/plan/status/integration/acceptance, try another verifiable bounded worker before blocking, require explicit authorization for parent direct fallback, and accept only runtime evidence with requested/resolved models kept distinct."

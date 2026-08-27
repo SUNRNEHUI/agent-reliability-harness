@@ -5,6 +5,6 @@ earlier Harness generations. They remain useful for regression fixtures and desi
 but they are not part of the current runtime Skill contract.
 
 The only distributable package is
-[`skills/agent-reliability-harness/`](../../skills/agent-reliability-harness/). Do not copy
+[`skills/agent-harness/`](../../skills/agent-harness/). Do not copy
 files from this directory into an installation unless a future behavior change explicitly
 promotes and tests them as runtime dependencies.

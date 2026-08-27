@@ -18,7 +18,7 @@ except ImportError:  # unittest discover -s tests imports modules without a pack
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
+ROOT = REPOSITORY_ROOT / "skills" / "agent-harness"
 
 
 def run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:

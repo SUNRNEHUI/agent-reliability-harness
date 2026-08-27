@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 
-SKILL_NAME = "agent-reliability-harness"
+SKILL_NAME = "agent-harness"
 SKILL_ROOT = Path("skills") / SKILL_NAME
 
 VERSION_PATTERNS = {
@@ -33,10 +33,10 @@ VERSION_PATTERNS = {
     str(SKILL_ROOT / "SKILL.md"): (
         (
             re.compile(
-                r"^\*Agent (?:Dispatch|Reliability) Harness v[^|]+ \| (?P<date>[^*]+)\*$",
+                r"^\*Agent Harness v[^|]+ \| (?P<date>[^*]+)\*$",
                 re.MULTILINE,
             ),
-            "*Agent Reliability Harness v{version} | {date}*",
+            "*Agent Harness v{version} | {date}*",
         ),
     ),
 }

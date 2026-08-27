@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
+ROOT = REPOSITORY_ROOT / "skills" / "agent-harness"
 PACKAGE_SCRIPT = REPOSITORY_ROOT / "scripts" / "package_skill.py"
 LEGACY_TEMPLATES = REPOSITORY_ROOT / "docs" / "legacy" / "templates"
 
@@ -317,7 +317,7 @@ def test_trigger_shortcuts_run_the_mode_gate_without_forcing_work() -> None:
     assert "try another verifiable bounded worker first" in normalized_skill
     assert "if none exists or resolution fails, block" in normalized_skill
     assert "explicit user authorization" in normalized_skill
-    assert "$agent-reliability-harness" in default_prompt
+    assert "$agent-harness" in default_prompt
 
 
 def test_optional_model_routing_policy_is_present() -> None:
@@ -380,7 +380,7 @@ def test_plan_native_entry_is_lean_and_provider_neutral() -> None:
         assert provider_slug not in skill
     assert "Direct / Lite / Full" not in skill
     assert len(metadata.split()) <= 120
-    assert "$agent-reliability-harness" in metadata
+    assert "$agent-harness" in metadata
     for term in ("Native", "Portable", "Audited"):
         assert term in metadata
 

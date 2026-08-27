@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 HARNESS_ROOT = (
-    Path(__file__).resolve().parents[1] / "skills" / "agent-reliability-harness"
+    Path(__file__).resolve().parents[1] / "skills" / "agent-harness"
 )
 INIT_RUN = HARNESS_ROOT / "scripts" / "init_run.py"
 HARNESSCTL = HARNESS_ROOT / "scripts" / "harnessctl.py"

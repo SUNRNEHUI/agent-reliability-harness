@@ -1,18 +1,18 @@
 <div align="center">
 
-# Agent Reliability Harness
+# Agent Harness
 
 **Runtime-neutral continuity and acceptance controls for AI coding agents.**
 
 [简体中文](README.zh-CN.md) · English
 
-[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-reliability-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-reliability-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
 </div>
 
-Current version: **v9.3.0** · 2026-08-27
+Current version: **v10.0.0** · 2026-08-27
 
-Agent Reliability Harness is a Plan-native skill for reliable execution across Codex,
+Agent Harness is a Plan-native skill for reliable execution across Codex,
 Claude Code, Grok, and other file-and-shell capable agents. It uses the runtime's own Plan
 for ordinary work, materializes a compact provider-neutral contract only when work must
 survive a boundary, and adds audit controls only when risk requires them.
@@ -28,14 +28,25 @@ survive a boundary, and adds audit controls only when risk requires them.
 **Quick start**
 
 ```bash
-npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+npx skills add https://github.com/SUNRNEHUI/agent-harness --skill "agent-harness"
 ```
 
-[Overview](#overview) · [Execution modes](#execution-modes) · [Installation](#installation) · [Documentation map](#runtime-adapters)
+[Overview](#overview) · [Execution modes](#execution-modes) · [Download](#download) · [Installation](#installation) · [Release history](#release-history) · [Documentation map](#runtime-adapters)
 
-> **v9.3.0 highlights:** public Draft 2020-12 schemas, the `arh-status-v1` JSON projection,
-> the restored confidence gate, a frozen 19-command controller surface, and Python 3.14 /
-> Windows CI coverage with pinned Actions.
+## Download
+
+Use the [GitHub Releases](https://github.com/SUNRNEHUI/agent-harness/releases) page as the
+source of truth. The v10.0.0 runtime package is published as
+`agent-harness-v10.0.0.zip`; the direct download and checksum assets are:
+
+- [Download agent-harness-v10.0.0.zip](https://github.com/SUNRNEHUI/agent-harness/releases/latest/download/agent-harness-v10.0.0.zip)
+- Checksum asset: `agent-harness-v10.0.0.zip.sha256`
+- [Open the v10.0.0 release page](https://github.com/SUNRNEHUI/agent-harness/releases/tag/v10.0.0)
+
+> **v10.0.0 highlights:** the project and skill are now named **Agent Harness** /
+> `agent-harness`; explicit “write a harness” requests first compile an intent-to-contract
+> alignment packet and readiness gate; public Draft 2020-12 schemas keep their payload format
+> while moving to the `urn:agent-harness:` namespace; and the v9.4 behavior is included.
 
 ---
 
@@ -275,17 +286,17 @@ flow or visible evidence when those tiers are available.
 Install from the repository with the generic Agent Skills installer:
 
 ```bash
-npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness
-npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+npx skills add https://github.com/SUNRNEHUI/agent-harness
+npx skills add https://github.com/SUNRNEHUI/agent-harness --skill "agent-harness"
 ```
 
 The installer discovers the canonical package under `skills/`. To install from a local
 checkout instead:
 
 ```bash
-git clone https://github.com/SUNRNEHUI/agent-reliability-harness.git
-cd agent-reliability-harness
-npx skills add . --skill "agent-reliability-harness"
+git clone https://github.com/SUNRNEHUI/agent-harness.git
+cd agent-harness
+npx skills add . --skill "agent-harness"
 ```
 
 For a manual or development installation, verify and copy the same canonical package:
@@ -293,19 +304,19 @@ For a manual or development installation, verify and copy the same canonical pac
 ```bash
 python3 scripts/sync_version.py
 python3 scripts/package_skill.py --verify-source
-python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
+python3 scripts/package_skill.py --output /tmp/agent-harness-runtime --force
 ```
 
 Install the runtime package into Codex:
 
 ```bash
-mkdir -p ~/.codex/skills/agent-reliability-harness
+mkdir -p ~/.codex/skills/agent-harness
 rsync -a --delete --exclude workspace --exclude .harness \
-  /tmp/agent-reliability-harness-runtime/ ~/.codex/skills/agent-reliability-harness/
-python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
+  /tmp/agent-harness-runtime/ ~/.codex/skills/agent-harness/
+python3 scripts/package_skill.py --check ~/.codex/skills/agent-harness
 ```
 
-The copy is byte-for-byte derived from `skills/agent-reliability-harness/`; there is no
+The copy is byte-for-byte derived from `skills/agent-harness/`; there is no
 second runtime file list to maintain.
 
 Recommended Codex defaults for this routing policy:
@@ -346,21 +357,47 @@ silently executed by the parent.
 
 ## Migration From Earlier Names
 
-Earlier releases used Agent Dispatch Harness as the public project and runtime name; older releases used `multi-agent-dispatcher` and some local installs used `multi-agent-orchestrator`. New installs should use `agent-reliability-harness`.
+v10.0.0 is a deliberate breaking rename:
 
-When upgrading an existing local install, install the new runtime directory first, then remove old local runtime folders if they are still present and no longer needed:
+| | v9 | v10 |
+| --- | --- | --- |
+| Public repository ID | `agent-reliability-harness` | `agent-harness` |
+| Skill ID / explicit invocation | `agent-reliability-harness` / `$agent-reliability-harness` | `agent-harness` / `$agent-harness` |
+| Display name | Agent Reliability Harness | Agent Harness |
+
+The old GitHub URL
+[`SUNRNEHUI/agent-reliability-harness`](https://github.com/SUNRNEHUI/agent-reliability-harness)
+is expected to redirect to the new repository. Existing v9 releases remain downloadable from
+the [old releases page](https://github.com/SUNRNEHUI/agent-reliability-harness/releases).
+New installations and explicit calls should use `agent-harness` and `$agent-harness`.
+Existing `arh-*` payload discriminator values remain unchanged so Portable, Audited, status,
+and worker-result artifacts can still be read and resumed; they are legacy protocol IDs, not
+the current project or Skill name.
+
+When upgrading an existing local install, install the new runtime directory first, then remove
+old local runtime folders only if they are still present and no longer needed:
 
 ```bash
-rm -rf ~/.codex/skills/agent-dispatch-harness ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orchestrator
+rm -rf ~/.codex/skills/agent-reliability-harness ~/.codex/skills/agent-dispatch-harness \
+  ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orchestrator
 ```
 
 This avoids duplicate skill entries that describe the same workflow.
 
 ---
 
+## Release History
+
+- **v10.0.0 · 2026-08-27** — release notes: breaking rename to Agent Harness, intent-to-contract
+  synthesis/readiness gates for explicit harness requests, and the v9.4 behavior upgrade.
+- **v9.3.0** — previous Agent Reliability Harness release; its release assets remain available
+  from the legacy repository URL.
+
+---
+
 ## Runtime Package Contents
 
-`skills/agent-reliability-harness/` is the complete distributable package. It includes:
+`skills/agent-harness/` is the complete distributable package. It includes:
 
 - `VERSION`
 - `SKILL.md`
@@ -537,7 +574,7 @@ python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --json
 
 The runtime package also publishes Draft 2020-12 schemas for Portable contracts, Audited run
 state, acceptance registries, worker results, and status output. See
-[`references/public-contracts.md`](skills/agent-reliability-harness/references/public-contracts.md)
+[`references/public-contracts.md`](skills/agent-harness/references/public-contracts.md)
 for the structural-versus-semantic validation boundary.
 
 ---
@@ -550,7 +587,7 @@ The runtime and repository checks use the Python standard library:
 python3 -m unittest discover -s tests -v
 python3 tests/test_runtime_behavior.py
 python3 tests/protocol_regression_harness.py \
-  --skill-root skills/agent-reliability-harness --pretty
+  --skill-root skills/agent-harness --pretty
 python3 tests/evals/score_forward.py \
   --cases tests/evals/forward_cases.json --results /path/to/agent-results.json
 python3 scripts/schema_smoke.py
@@ -568,9 +605,9 @@ Skill under `skills/`.
 ## Repository Layout
 
 ```text
-agent-reliability-harness/
+agent-harness/
 ├── skills/
-│   └── agent-reliability-harness/   # complete installable Skill package
+│   └── agent-harness/   # complete installable Skill package
 │       ├── SKILL.md
 │       ├── VERSION
 │       ├── adapters/
@@ -598,9 +635,9 @@ runtime or integration boundary:
 
 | Area | Documentation |
 | --- | --- |
-| Runtime adapters | [Codex](skills/agent-reliability-harness/adapters/codex.md) · [Grok](skills/agent-reliability-harness/adapters/grok.md) · [Claude Code](skills/agent-reliability-harness/adapters/claude-code.md) |
-| Durable protocol | [Portable Contract v2](skills/agent-reliability-harness/references/portable-contract.md) · [Audited and legacy protocol](skills/agent-reliability-harness/references/harness-protocol.md) |
-| Public interfaces | [Public JSON and CLI contracts](skills/agent-reliability-harness/references/public-contracts.md) |
+| Runtime adapters | [Codex](skills/agent-harness/adapters/codex.md) · [Grok](skills/agent-harness/adapters/grok.md) · [Claude Code](skills/agent-harness/adapters/claude-code.md) |
+| Durable protocol | [Portable Contract v2](skills/agent-harness/references/portable-contract.md) · [Audited and legacy protocol](skills/agent-harness/references/harness-protocol.md) |
+| Public interfaces | [Public JSON and CLI contracts](skills/agent-harness/references/public-contracts.md) |
 
 Adapters map native planning, worker controls, and optional model profiles to each runtime.
 They must not add provider-specific fields to the Portable contract.

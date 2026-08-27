@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:agent-reliability-harness:portable:v2",
-  "title": "Agent Reliability Harness Portable Contract v2",
+  "$id": "urn:agent-harness:portable:v2",
+  "title": "Agent Harness Portable Contract v2",
   "description": "Structural contract for .harness/<slug>/contract.json. Filesystem, digest, and transition semantics remain runtime checks.",
   "type": "object",
   "additionalProperties": false,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:agent-reliability-harness:audited-run-state:v1",
-  "title": "Agent Reliability Harness Audited Run State v1",
+  "$id": "urn:agent-harness:audited-run-state:v1",
+  "title": "Agent Harness Audited Run State v1",
   "description": "Structural contract for audited run_state.json, including readable legacy mode full. Cross-file digests, transitions, gates, and filesystem semantics remain runtime checks.",
   "type": "object",
   "additionalProperties": false,

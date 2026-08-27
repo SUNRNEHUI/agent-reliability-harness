@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_ROOT = ROOT / "skills" / "agent-reliability-harness" / "schemas"
+SCHEMA_ROOT = ROOT / "skills" / "agent-harness" / "schemas"
 SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
+SKILL_ROOT = REPOSITORY_ROOT / "skills" / "agent-harness"
 SCHEMA_ROOT = SKILL_ROOT / "schemas"
 
 
@@ -182,11 +182,11 @@ class PlatformBaselineTests(unittest.TestCase):
 
 class SchemaContractTests(unittest.TestCase):
     EXPECTED_SCHEMAS = {
-        "portable-contract-v2.schema.json": ("urn:agent-reliability-harness:portable:v2", "schema_version"),
-        "audited-run-state-v1.schema.json": ("urn:agent-reliability-harness:audited-run-state:v1", "version"),
-        "acceptance-registry-v1.schema.json": ("urn:agent-reliability-harness:acceptance-registry:v1", "version"),
-        "worker-result-v2.schema.json": ("urn:agent-reliability-harness:worker-result:v2", "schema"),
-        "status-output-v1.schema.json": ("urn:agent-reliability-harness:status-output:v1", "schema"),
+        "portable-contract-v2.schema.json": ("urn:agent-harness:portable:v2", "schema_version"),
+        "audited-run-state-v1.schema.json": ("urn:agent-harness:audited-run-state:v1", "version"),
+        "acceptance-registry-v1.schema.json": ("urn:agent-harness:acceptance-registry:v1", "version"),
+        "worker-result-v2.schema.json": ("urn:agent-harness:worker-result:v2", "schema"),
+        "status-output-v1.schema.json": ("urn:agent-harness:status-output:v1", "schema"),
     }
 
     def test_versioned_schema_bundle_is_complete_and_machine_readable(self) -> None:

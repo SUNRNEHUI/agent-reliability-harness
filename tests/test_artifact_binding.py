@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills" / "agent-reliability-harness"
+SKILL_ROOT = Path(__file__).resolve().parents[1] / "skills" / "agent-harness"
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 
 from harnessctl import validate_artifact_dir_binding

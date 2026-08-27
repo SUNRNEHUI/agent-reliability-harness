@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:agent-reliability-harness:acceptance-registry:v1",
-  "title": "Agent Reliability Harness Acceptance Registry v1",
+  "$id": "urn:agent-harness:acceptance-registry:v1",
+  "title": "Agent Harness Acceptance Registry v1",
   "description": "Structural contract for acceptance_registry.json. Evidence qualification, task binding, and terminal-state semantics remain runtime checks.",
   "type": "object",
   "additionalProperties": false,

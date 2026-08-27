@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:agent-reliability-harness:worker-result:v2",
-  "title": "Agent Reliability Harness Worker Result v2",
+  "$id": "urn:agent-harness:worker-result:v2",
+  "title": "Agent Harness Worker Result v2",
   "description": "Structural envelope for the worker_result.json handoff. The manager still verifies evidence and owns merge/acceptance.",
   "type": "object",
   "additionalProperties": false,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:agent-reliability-harness:status-output:v1",
-  "title": "Agent Reliability Harness Status Output v1",
+  "$id": "urn:agent-harness:status-output:v1",
+  "title": "Agent Harness Status Output v1",
   "description": "Stable machine-readable projection emitted by status.py --json. It reports integrity findings; it does not replace semantic validation.",
   "type": "object",
   "additionalProperties": false,

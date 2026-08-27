@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
+SKILL_ROOT = REPOSITORY_ROOT / "skills" / "agent-harness"
 SCRIPTS = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 

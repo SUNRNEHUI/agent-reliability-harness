@@ -1,18 +1,18 @@
 <div align="center">
 
-# Agent Reliability Harness
+# Agent Harness
 
 **面向 AI 编程代理的运行时中立续接与验收控制。**
 
 简体中文 · [English](README.md)
 
-[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-reliability-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-reliability-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![许可证：MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![许可证：MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
 </div>
 
-当前版本：**v9.3.0** · 2026-08-27
+当前版本：**v10.0.0** · 2026-08-27
 
-Agent Reliability Harness 是一个面向 Codex、Claude Code、Grok 及其他具备文件与
+Agent Harness 是一个面向 Codex、Claude Code、Grok 及其他具备文件与
 shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运行时原生 Plan；只有
 任务必须跨越边界时才物化紧凑、provider-neutral 的合同；只有风险需要时才增加审计控制。
 
@@ -27,14 +27,25 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 **快速开始**
 
 ```bash
-npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+npx skills add https://github.com/SUNRNEHUI/agent-harness --skill "agent-harness"
 ```
 
-[概览](#概览) · [执行模式](#执行模式) · [安装](#安装) · [文档导航](#运行时适配)
+[概览](#概览) · [执行模式](#执行模式) · [下载](#下载) · [安装](#安装) · [发布历史](#发布历史) · [文档导航](#运行时适配)
 
-> **v9.3.0 亮点：** 发布 Draft 2020-12 公共 Schema、`arh-status-v1` JSON 投影、恢复
-> confidence gate，冻结 19 个 controller 命令，并增加 Python 3.14 / Windows CI 与固定
-> SHA 的 Actions。
+## 下载
+
+请以 [GitHub Releases](https://github.com/SUNRNEHUI/agent-harness/releases) 页面为准。
+v10.0.0 runtime 包发布为 `agent-harness-v10.0.0.zip`，可从以下入口获取下载和
+checksum 资产：
+
+- [下载 agent-harness-v10.0.0.zip](https://github.com/SUNRNEHUI/agent-harness/releases/latest/download/agent-harness-v10.0.0.zip)
+- checksum 资产：`agent-harness-v10.0.0.zip.sha256`
+- [打开 v10.0.0 发布页](https://github.com/SUNRNEHUI/agent-harness/releases/tag/v10.0.0)
+
+> **v10.0.0 亮点：** 项目和 Skill 现在统一命名为 **Agent Harness** /
+> `agent-harness`；显式“写一个 harness”会先编译 intent-to-contract 对齐包和 readiness
+> gate；公共 Draft 2020-12 Schema 保持 payload 格式不变，仅迁移到 `urn:agent-harness:`
+> namespace；并合入 v9.4 的行为。
 
 ---
 
@@ -252,16 +263,16 @@ worker self-report 和 harness score 都不是完成证据。manager 必须重�
 使用通用 Agent Skills 安装器从仓库安装：
 
 ```bash
-npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness
-npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+npx skills add https://github.com/SUNRNEHUI/agent-harness
+npx skills add https://github.com/SUNRNEHUI/agent-harness --skill "agent-harness"
 ```
 
 安装器会发现 `skills/` 下的权威包。需要从本地 checkout 安装时：
 
 ```bash
-git clone https://github.com/SUNRNEHUI/agent-reliability-harness.git
-cd agent-reliability-harness
-npx skills add . --skill "agent-reliability-harness"
+git clone https://github.com/SUNRNEHUI/agent-harness.git
+cd agent-harness
+npx skills add . --skill "agent-harness"
 ```
 
 手动安装或开发验证时，校验并复制同一个权威包：
@@ -269,19 +280,19 @@ npx skills add . --skill "agent-reliability-harness"
 ```bash
 python3 scripts/sync_version.py
 python3 scripts/package_skill.py --verify-source
-python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
+python3 scripts/package_skill.py --output /tmp/agent-harness-runtime --force
 ```
 
 安装到 Codex：
 
 ```bash
-mkdir -p ~/.codex/skills/agent-reliability-harness
+mkdir -p ~/.codex/skills/agent-harness
 rsync -a --delete --exclude workspace --exclude .harness \
-  /tmp/agent-reliability-harness-runtime/ ~/.codex/skills/agent-reliability-harness/
-python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
+  /tmp/agent-harness-runtime/ ~/.codex/skills/agent-harness/
+python3 scripts/package_skill.py --check ~/.codex/skills/agent-harness
 ```
 
-复制结果逐文件来自 `skills/agent-reliability-harness/`，不再维护第二份 runtime 文件清单。
+复制结果逐文件来自 `skills/agent-harness/`，不再维护第二份 runtime 文件清单。
 
 这套路由策略推荐使用以下 Codex 默认配置：
 
@@ -319,21 +330,43 @@ Skill 不会创建这个个人配置文件。Codex 已安装并识别它时，ad
 
 ## 从旧名称迁移
 
-早期版本曾使用 Agent Dispatch Harness 作为公开项目和 runtime 名称，更早版本使用 `multi-agent-dispatcher`，一些本地安装也使用过 `multi-agent-orchestrator`。新的安装和公开传播应统一使用 `agent-reliability-harness`。
+v10.0.0 是一次明确的 breaking rename：
 
-升级已有本地安装时，先安装新的 runtime 目录；如果旧目录仍存在且不再需要，可以删除：
+| | v9 | v10 |
+| --- | --- | --- |
+| 公开仓库 ID | `agent-reliability-harness` | `agent-harness` |
+| Skill ID / 显式调用 | `agent-reliability-harness` / `$agent-reliability-harness` | `agent-harness` / `$agent-harness` |
+| 显示名称 | Agent Reliability Harness | Agent Harness |
+
+旧 GitHub URL
+[`SUNRNEHUI/agent-reliability-harness`](https://github.com/SUNRNEHUI/agent-reliability-harness)
+预计会重定向到新仓库。已有 v9 release 仍可从[旧 releases 页面](https://github.com/SUNRNEHUI/agent-reliability-harness/releases)
+下载。新的安装和显式调用应使用 `agent-harness` 与 `$agent-harness`。
+现有 `arh-*` payload discriminator 保持不变，确保 Portable、Audited、status 和
+worker-result artifact 仍可读取和续接；它们是兼容性协议 ID，不是当前项目或 Skill 名称。
+
+升级已有本地安装时，先安装新的 runtime 目录；只有旧目录仍存在且不再需要时才删除：
 
 ```bash
-rm -rf ~/.codex/skills/agent-dispatch-harness ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orchestrator
+rm -rf ~/.codex/skills/agent-reliability-harness ~/.codex/skills/agent-dispatch-harness \
+  ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orchestrator
 ```
 
 这样可以避免同一套工作流以多个 skill 名称重复出现。
 
 ---
 
+## 发布历史
+
+- **v10.0.0 · 2026-08-27** — release notes：breaking rename 为 Agent Harness；显式 harness
+  请求新增 intent-to-contract synthesis/readiness gate，并合入 v9.4 行为升级。
+- **v9.3.0** — 上一个 Agent Reliability Harness release；其 release 资产仍保留在旧仓库 URL。
+
+---
+
 ## Runtime 包内容
 
-`skills/agent-reliability-harness/` 是完整的可分发包，其中包含：
+`skills/agent-harness/` 是完整的可分发包，其中包含：
 
 - `VERSION`
 - `SKILL.md`
@@ -507,7 +540,7 @@ python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --json
 
 runtime 包还发布 Portable contract、Audited run state、acceptance registry、worker result
 和 status output 的 Draft 2020-12 Schema。结构校验与语义校验的边界见
-[`references/public-contracts.md`](skills/agent-reliability-harness/references/public-contracts.md)。
+[`references/public-contracts.md`](skills/agent-harness/references/public-contracts.md)。
 
 ---
 
@@ -519,7 +552,7 @@ runtime 与仓库检查只依赖 Python 标准库：
 python3 -m unittest discover -s tests -v
 python3 tests/test_runtime_behavior.py
 python3 tests/protocol_regression_harness.py \
-  --skill-root skills/agent-reliability-harness --pretty
+  --skill-root skills/agent-harness --pretty
 python3 tests/evals/score_forward.py \
   --cases tests/evals/forward_cases.json --results /path/to/agent-results.json
 python3 scripts/schema_smoke.py
@@ -536,9 +569,9 @@ git diff --check
 ## 仓库结构
 
 ```text
-agent-reliability-harness/
+agent-harness/
 ├── skills/
-│   └── agent-reliability-harness/   # 完整、可直接安装的 Skill 包
+│   └── agent-harness/   # 完整、可直接安装的 Skill 包
 │       ├── SKILL.md
 │       ├── VERSION
 │       ├── adapters/
@@ -564,9 +597,9 @@ agent-reliability-harness/
 
 | 领域 | 文档 |
 | --- | --- |
-| 运行时适配 | [Codex](skills/agent-reliability-harness/adapters/codex.md) · [Grok](skills/agent-reliability-harness/adapters/grok.md) · [Claude Code](skills/agent-reliability-harness/adapters/claude-code.md) |
-| 持久协议 | [Portable Contract v2](skills/agent-reliability-harness/references/portable-contract.md) · [Audited 与 legacy 协议](skills/agent-reliability-harness/references/harness-protocol.md) |
-| 公开接口 | [公开 JSON 与 CLI 契约](skills/agent-reliability-harness/references/public-contracts.md) |
+| 运行时适配 | [Codex](skills/agent-harness/adapters/codex.md) · [Grok](skills/agent-harness/adapters/grok.md) · [Claude Code](skills/agent-harness/adapters/claude-code.md) |
+| 持久协议 | [Portable Contract v2](skills/agent-harness/references/portable-contract.md) · [Audited 与 legacy 协议](skills/agent-harness/references/harness-protocol.md) |
+| 公开接口 | [公开 JSON 与 CLI 契约](skills/agent-harness/references/public-contracts.md) |
 
 适配文档把原生 planning、worker 控制和可选模型 profile 映射到不同运行时，但不能把
 provider-specific 字段加入 Portable contract。

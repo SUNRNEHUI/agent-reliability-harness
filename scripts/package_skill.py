@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 
-SKILL_NAME = "agent-reliability-harness"
+SKILL_NAME = "agent-harness"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = REPOSITORY_ROOT / "skills" / SKILL_NAME
 REQUIRED_FILES = (
@@ -164,7 +164,7 @@ def check_install(source: Path, install_dir: Path) -> int:
         raise SystemExit(f"install directory does not exist: {install_dir}")
 
     with tempfile.TemporaryDirectory(
-        prefix="agent-reliability-harness-package-check-"
+        prefix="agent-harness-package-check-"
     ) as temporary:
         expected = Path(temporary)
         copy_package(source, expected)

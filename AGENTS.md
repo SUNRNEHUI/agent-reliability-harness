@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件是 `agent-reliability-harness` 项目的项目级规则。它覆盖用户级通用规则中与本项目冲突的部分。
+本文件是 `agent-harness` 项目的项目级规则。它覆盖用户级通用规则中与本项目冲突的部分。
 
 ## 项目定位
 
@@ -19,13 +19,13 @@
 
 ## 主要文件
 
-- `skills/agent-reliability-harness/`：唯一、完整、可直接安装的 runtime Skill 包。
-- `skills/agent-reliability-harness/SKILL.md`：Skill 入口协议和触发说明。
-- `skills/agent-reliability-harness/VERSION`：当前发布版本的单一来源。
+- `skills/agent-harness/`：唯一、完整、可直接安装的 runtime Skill 包。
+- `skills/agent-harness/SKILL.md`：Skill 入口协议和触发说明。
+- `skills/agent-harness/VERSION`：当前发布版本的单一来源。
 - `README.md` / `README.zh-CN.md`：公开说明，必须保持英文和中文同步。
-- `skills/agent-reliability-harness/references/`：运行时按需加载的协议材料。
-- `skills/agent-reliability-harness/templates/`：运行时需要的 artifact 与 worker 模板。
-- `skills/agent-reliability-harness/scripts/`：控制器、validator、status、TDD 和 witness 运行时脚本。
+- `skills/agent-harness/references/`：运行时按需加载的协议材料。
+- `skills/agent-harness/templates/`：运行时需要的 artifact 与 worker 模板。
+- `skills/agent-harness/scripts/`：控制器、validator、status、TDD 和 witness 运行时脚本。
 - `tests/`：行为、拒绝边界和开放包结构契约测试；不得放进 runtime Skill 包。
 - `scripts/package_skill.py`：校验、复制并比较权威 `skills/` 包，不维护第二份文件白名单。
 - `scripts/sync_version.py`：从 Skill 包内的 `VERSION` 同步公开版本引用。
@@ -36,10 +36,10 @@
 - 修改 skill 行为时，优先改行为测试，再改 Skill 包内的 `SKILL.md`、`references/`、模板和脚本。
 - 修改公开行为或版本时，必须同步 `README.md` 和 `README.zh-CN.md`。
 - 修改当前版本时，先改 Skill 包内的 `VERSION`，再运行 `python3 scripts/sync_version.py --fix --date YYYY-MM-DD`。
-- `skills/agent-reliability-harness/` 目录本身就是 runtime 权威边界；新增 runtime 文件不需要再登记白名单。
+- `skills/agent-harness/` 目录本身就是 runtime 权威边界；新增 runtime 文件不需要再登记白名单。
 - repository-only 测试、fixture、历史文档和维护工具不得进入 Skill 包。
 - 不要把 `workspace/`、`.harness/`、缓存、session 日志、私有配置或生成 artifact 加入 runtime 包。
-- 不要把本地安装目录 `~/.codex/skills/agent-reliability-harness` 当成源码。源码以本仓库为准。
+- 不要把本地安装目录 `~/.codex/skills/agent-harness` 当成源码。源码以本仓库为准。
 - `README.md` 与 `README.zh-CN.md` 的标题结构必须一致。
 - Skill 包内的 `SKILL.md` 默认不超过 750 words，`agents/openai.yaml` 不超过 120 words。
 - 保持 diff 小而聚焦，不做无关重排、格式化或重命名。
@@ -63,19 +63,19 @@
 python3 -m unittest discover -s tests -v
 python3 tests/test_runtime_behavior.py
 python3 tests/protocol_regression_harness.py \
-  --skill-root skills/agent-reliability-harness --pretty
-python3 -m py_compile scripts/*.py skills/agent-reliability-harness/scripts/*.py tests/*.py
+  --skill-root skills/agent-harness --pretty
+python3 -m py_compile scripts/*.py skills/agent-harness/scripts/*.py tests/*.py
 python3 scripts/package_skill.py --verify-source
-python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
-python3 scripts/package_skill.py --check /tmp/agent-reliability-harness-runtime
-python3 -m json.tool skills/agent-reliability-harness/templates/worker_result.json >/dev/null
+python3 scripts/package_skill.py --output /tmp/agent-harness-runtime --force
+python3 scripts/package_skill.py --check /tmp/agent-harness-runtime
+python3 -m json.tool skills/agent-harness/templates/worker_result.json >/dev/null
 git diff --check
 ```
 
 如果改动影响 TDD trace：
 
 ```bash
-python3 skills/agent-reliability-harness/scripts/tdd_gate_check.py \
+python3 skills/agent-harness/scripts/tdd_gate_check.py \
   docs/legacy/templates/tdd_trace.jsonl
 ```
 
@@ -83,8 +83,8 @@ python3 skills/agent-reliability-harness/scripts/tdd_gate_check.py \
 
 ```bash
 rsync -a --delete --exclude workspace --exclude .harness \
-  /tmp/agent-reliability-harness-runtime/ /Users/sunrenhui/.codex/skills/agent-reliability-harness/
-python3 scripts/package_skill.py --check /Users/sunrenhui/.codex/skills/agent-reliability-harness
+  /tmp/agent-harness-runtime/ /Users/sunrenhui/.codex/skills/agent-harness/
+python3 scripts/package_skill.py --check /Users/sunrenhui/.codex/skills/agent-harness
 ```
 
 ## 发布规则

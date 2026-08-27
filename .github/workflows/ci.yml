@@ -34,7 +34,7 @@ jobs:
         run: >-
           python -m compileall -q
           scripts
-          skills/agent-reliability-harness/scripts
+          skills/agent-harness/scripts
           tests
       - name: Run unit and behavior tests
         run: python -m unittest discover -s tests -v
@@ -43,7 +43,7 @@ jobs:
       - name: Run adversarial protocol checks
         run: >-
           python tests/protocol_regression_harness.py
-          --skill-root skills/agent-reliability-harness
+          --skill-root skills/agent-harness
           --pretty
       - name: Verify canonical Skill package
         run: python scripts/package_skill.py --verify-source
@@ -52,10 +52,10 @@ jobs:
       - name: Package build and check smoke
         run: >-
           python scripts/package_skill.py
-          --output "${{ runner.temp }}/agent-reliability-harness-runtime"
+          --output "${{ runner.temp }}/agent-harness-runtime"
           --force
           && python scripts/package_skill.py
-          --check "${{ runner.temp }}/agent-reliability-harness-runtime"
+          --check "${{ runner.temp }}/agent-harness-runtime"
       - name: Check diff whitespace
         run: git diff --check HEAD^ HEAD
 

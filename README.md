@@ -6,7 +6,7 @@
 
 [简体中文](README.zh-CN.md) · English
 
-[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-reliability-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-reliability-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: not specified](https://img.shields.io/badge/license-not%20specified-lightgrey)](#license)
+[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-reliability-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-reliability-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
 </div>
 
@@ -609,4 +609,4 @@ They must not add provider-specific fields to the Portable contract.
 
 ## License
 
-No license file is currently included in this repository.
+Released under the [MIT License](LICENSE).

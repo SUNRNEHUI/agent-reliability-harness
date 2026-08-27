@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "fields": {
+    "mode": "native | portable | audited",
+    "load_coding_workflow": "boolean",
+    "delegation": "none | bounded | deferred",
+    "durable_artifacts": "boolean",
+    "approval": "not_required | required_before_action"
+  },
+  "cases": [
+    {
+      "id": "native_typo",
+      "prompt": "把 README 里的一个错别字改掉。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": false,
+        "delegation": "none",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_react_filter",
+      "prompt": "帮我给这个 React 页面加一个筛选按钮，改完跑一下测试。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": true,
+        "delegation": "bounded",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_complex_modules",
+      "prompt": "这是一个大型代码任务，认证、支付和通知三个模块边界独立；你是主 Agent，请列一个运行时计划，分给多个 Agent 并持续跟踪状态，本次 session 内完成。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": true,
+        "delegation": "bounded",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "portable_resume",
+      "prompt": "继续昨天那个多 agent 长任务：在新 session 接着修复支付 API，并按上次记录的进度继续。",
+      "expected": {
+        "mode": "portable",
+        "load_coding_workflow": true,
+        "delegation": "bounded",
+        "durable_artifacts": true,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "audited_production_action",
+      "prompt": "让几个 agent 并行清理生产数据库脏数据，顺便更新线上配置。",
+      "expected": {
+        "mode": "audited",
+        "load_coding_workflow": false,
+        "delegation": "deferred",
+        "durable_artifacts": true,
+        "approval": "required_before_action"
+      }
+    },
+    {
+      "id": "audited_ui_release_gate",
+      "prompt": "登录和设置页进入发布门禁；让前端 Agent 修改、测试 Agent 验收，并提供可复核的移动端 Production State Witness。",
+      "expected": {
+        "mode": "audited",
+        "load_coding_workflow": true,
+        "delegation": "bounded",
+        "durable_artifacts": true,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_code_review",
+      "prompt": "只审查这个支付模块的代码和测试，列出有证据的问题，不要修改文件。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": true,
+        "delegation": "none",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_evidence_copy",
+      "prompt": "帮我写一段更有证据感的产品文案。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": false,
+        "delegation": "none",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_micro_implementation",
+      "prompt": "在当前小模块里修一个局部、低风险、上下文完整的小实现；一个短测试就能证明，委派成本更高。请显式确认 scope-local、low-risk/no-protected-boundary、context-complete、short-verification、delegation-cost-higher 后直接完成。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": true,
+        "delegation": "none",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_micro_explicit_delegation",
+      "prompt": "这是一个微型、局部且低风险的实现，但我明确要求你委派一个有界 worker 完成并回报验证证据。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": true,
+        "delegation": "bounded",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    }
+  ]
+}

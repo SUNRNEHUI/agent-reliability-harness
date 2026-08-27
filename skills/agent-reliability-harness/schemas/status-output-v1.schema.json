@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-reliability-harness:status-output:v1",
+  "title": "Agent Reliability Harness Status Output v1",
+  "description": "Stable machine-readable projection emitted by status.py --json. It reports integrity findings; it does not replace semantic validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "state_path",
+    "title",
+    "mode",
+    "status",
+    "current_stage",
+    "stages",
+    "tasks",
+    "completion",
+    "continuation",
+    "acceptance",
+    "blockers",
+    "state_conflicts",
+    "evidence_gaps",
+    "integrity",
+    "integrity_errors",
+    "completion_confidence",
+    "next_verification",
+    "memory_candidates",
+    "generated_files",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema": { "const": "arh-status-v1" },
+    "version": { "const": 1 },
+    "state_path": { "type": "string" },
+    "title": { "type": "string" },
+    "mode": { "type": "string" },
+    "status": { "type": "string" },
+    "current_stage": { "type": "string" },
+    "stages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stage" }
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/task" }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["done", "total"],
+      "properties": {
+        "done": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "continuation": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/continuation" }
+      ]
+    },
+    "acceptance": { "$ref": "#/$defs/acceptance" },
+    "blockers": { "$ref": "#/$defs/stringList" },
+    "state_conflicts": { "$ref": "#/$defs/stringList" },
+    "evidence_gaps": { "$ref": "#/$defs/stringList" },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "errors"],
+      "properties": {
+        "status": { "enum": ["pass", "fail"] },
+        "errors": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "integrity_errors": { "$ref": "#/$defs/stringList" },
+    "completion_confidence": { "enum": ["high", "medium", "low", "blocked", "unknown"] },
+    "next_verification": { "type": "string" },
+    "memory_candidates": { "type": "integer", "minimum": 0 },
+    "generated_files": { "$ref": "#/$defs/stringList" },
+    "stop_reason": { "type": "string" }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "status", "tasks"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "tasks": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "status", "stage", "stop_reason", "evidence_count"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "stage": { "type": "string" },
+        "stop_reason": { "type": "string" },
+        "evidence_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor_id", "runtime", "epoch"],
+      "properties": {
+        "actor_id": { "type": "string" },
+        "runtime": { "type": "string" },
+        "epoch": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "current_task", "next_action", "pending_verification"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "current_task": { "type": "string" },
+        "next_action": { "type": "string" },
+        "pending_verification": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "owner", "checkpoint", "readiness"],
+      "properties": {
+        "status": { "type": "string" },
+        "owner": { "$ref": "#/$defs/owner" },
+        "checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "readiness": { "enum": ["ready", "checkpointed", "not_checkpointed", "terminal"] }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry_status", "registry_error", "counts", "gaps"],
+      "properties": {
+        "registry_status": { "enum": ["available", "missing", "unreadable", "not_applicable"] },
+        "registry_error": { "type": "boolean" },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["blocked", "fail", "pass", "pending", "scoped_out"],
+          "properties": {
+            "blocked": { "type": "integer", "minimum": 0 },
+            "fail": { "type": "integer", "minimum": 0 },
+            "pass": { "type": "integer", "minimum": 0 },
+            "pending": { "type": "integer", "minimum": 0 },
+            "scoped_out": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "gaps": { "$ref": "#/$defs/stringList" }
+      }
+    }
+  }
+}

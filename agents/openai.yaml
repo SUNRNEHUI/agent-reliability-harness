@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agent Reliability Harness"
-  short_description: "Progress-bounded execution with durable evidence"
-  default_prompt: "Use $agent-reliability-harness as the main agent to choose Native, Portable, or Audited execution. Keep multi-agent work delivery-first, keep the parent on Sol max for planning and acceptance when configured, route justified long or mechanical Codex execution to Luna max, record requested versus resolved models, and stop stalled reasoning before increasing effort."

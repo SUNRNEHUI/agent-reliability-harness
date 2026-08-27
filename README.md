@@ -1,13 +1,41 @@
+<div align="center">
+
 # Agent Reliability Harness
 
-[简体中文](README.zh-CN.md) | English
+**Runtime-neutral continuity and acceptance controls for AI coding agents.**
+
+[简体中文](README.zh-CN.md) · English
+
+[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-reliability-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-reliability-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![License: not specified](https://img.shields.io/badge/license-not%20specified-lightgrey)](#license)
+
+</div>
+
+Current version: **v9.3.0** · 2026-08-27
 
 Agent Reliability Harness is a Plan-native skill for reliable execution across Codex,
 Claude Code, Grok, and other file-and-shell capable agents. It uses the runtime's own Plan
 for ordinary work, materializes a compact provider-neutral contract only when work must
 survive a boundary, and adds audit controls only when risk requires them.
 
-Current version: **v9.1.0** · 2026-08-02
+**Choose the lightest mode that fits**
+
+| Need | Mode | Durable state |
+| --- | --- | --- |
+| Finish and verify in the current session | **Native** | None; use the runtime Plan |
+| Survive a session/model boundary or external wait | **Portable** | `contract.json`, `events.jsonl`, `capsule.md` |
+| Prove high-risk, release, security, or production work | **Audited** | Portable state plus justified evidence and review controls |
+
+**Quick start**
+
+```bash
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+```
+
+[Overview](#overview) · [Execution modes](#execution-modes) · [Installation](#installation) · [Documentation map](#runtime-adapters) · [Release history](#release-history)
+
+> **v9.3.0 highlights:** public Draft 2020-12 schemas, the `arh-status-v1` JSON projection,
+> the restored confidence gate, a frozen 19-command controller surface, and Python 3.14 /
+> Windows CI coverage with pinned Actions.
 
 ---
 
@@ -23,7 +51,9 @@ The manager remains responsible for:
 - selecting Native, Portable, or Audited mode
 - defining the outcome, constraints, approval boundaries, and observable `done_when`
 - materializing only facts that are expensive or unsafe to reconstruct
-- assigning bounded work only when ownership is disjoint
+- choosing a proportional implementation route: parent-direct for a v3 micro change only after
+  explicit scope/risk/context/verification/cost confirmations, one bounded worker for ordinary or
+  heavy work, and parallel workers only when complex module ownership is disjoint
 - stopping reasoning loops that produce no observable progress
 - verifying acceptance evidence before claiming completion
 
@@ -42,11 +72,20 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 - **Audited extensions:** retain typed receipts, Production State Witness, protected TDD
   chronology, evaluator separation, and stronger fencing for high-risk work.
 - **Legacy compatibility:** continue to validate and resume `handoff-v1` Full artifacts.
-- **Adapter-local routing:** keep provider and model slugs outside the portable core.
+- **Adapter-local routing:** keep provider and model slugs outside the portable core; use a
+  configured `luna_worker` only for bounded execution that benefits from dispatch.
 - **Progress Circuit Breaker:** require new evidence, an artifact change, a test result, or a
-  binding decision; stop after two no-progress cycles without a new diagnosis.
-- **Clean packaging:** exclude repository docs, generated `.harness/` and `workspace/`
-  artifacts, caches, sessions, and private configuration.
+  binding decision that advances a named acceptance boundary; stop after two no-progress
+  cycles without a new diagnosis.
+- **Composable engineering workflow:** reuse active repository instructions or an available
+  matching coding skill for implementation and verification; do not copy or require a named
+  companion skill.
+- **Complexity-proportional execution:** a v3 micro implementation can stay parent-direct only
+  after explicit, auditable confirmations; ordinary or execution-heavy implementation uses one
+  bounded worker; complex work uses parallel workers only at independent module boundaries, while
+  tightly coupled writes stay serial or under one owner.
+- **Lean packaging:** exclude duplicate prompts, repository tests/evals, generated
+  `.harness/` and `workspace/` artifacts, caches, sessions, and private configuration.
 
 ---
 
@@ -58,8 +97,15 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 | **Portable** | Work may cross sessions/models, wait externally, or use workers whose results must survive context loss. | `.harness/<slug>/contract.json`, `events.jsonl`, `capsule.md` |
 | **Audited** | Production, release, permissions, security, destructive changes, disputed ownership, or high fake-success risk needs stronger proof. | Portable state plus justified evidence and review extensions; legacy Full remains supported. |
 
-Parallelism is independent of mode. A large sequential task can remain Native; a small
-handoff can be Portable; a high-risk one-file change can be Audited.
+Delegation is independent of mode. Native, Portable, and Audited choose persistence and
+evidence depth; they do not turn a micro implementation into a larger workflow. A v3 micro,
+local, low-risk, context-complete implementation that one short verification cycle can prove and
+costs more to delegate may stay parent-direct only with explicit confirmations for those facts and
+no protected boundary. The confirmations are routing assertions, not automatic proof; the parent
+must verify them. Ordinary or execution-heavy implementation uses one bounded worker. Complex
+work uses multiple agents only at independent module or ownership boundaries whose benefit exceeds
+coordination cost; tightly coupled writes remain serial or have one owner. Explicit user
+delegation overrides the micro direct choice.
 
 ---
 
@@ -67,7 +113,7 @@ handoff can be Portable; a high-risk one-file change can be Audited.
 
 Use this skill when the request involves:
 
-- saying "You are the main agent" or "write a harness" to activate the density router
+- saying "You are the main agent" or "write a harness" to activate one mode gate
 - writing a harness to solve this problem
 - durable handoff or cross-model continuation
 - resumable execution or a long external wait
@@ -75,40 +121,59 @@ Use this skill when the request involves:
 - 分头处理 / 分别派 / 拆给不同 agent
 - evidence-based acceptance or a high fake-success risk
 
-The trigger selects the skill, not the heaviest mode. Ordinary work should still remain
-Native, and workers should be used only when parallel ownership is real.
+The trigger selects the skill, not the heaviest mode. Ordinary implementation can remain
+Native when the repository workflow is sufficient. A qualifying v3 micro implementation may run
+directly in the parent only after its six confirmations; ordinary/heavy implementation uses one
+bounded worker when dispatch is available, and complex implementation is parallel only across
+independent ownership boundaries.
+Planning, review, and non-implementation work may stay in the parent thread when coordination
+costs more than execution. Mechanical batch work is a separate bounded route, not a synonym for
+micro implementation.
 
 ---
 
 ## Operating Flow
 
-```text
-Native Plan
--> define outcome / constraints / done_when / approval boundary
--> choose Native / Portable / Audited
--> execute, optionally with bounded workers
--> stop or re-diagnose after two no-progress cycles
--> verify against observable evidence
--> checkpoint or hand off only at a durable boundary
+```mermaid
+flowchart LR
+  plan["Native Plan"] --> define["Define outcome · constraints · done_when"]
+  define --> choose{"Choose mode"}
+  choose -->|Native| native["Execute in current session"]
+  choose -->|Portable| portable["Materialize three-file contract"]
+  choose -->|Audited| audited["Add evidence and review controls"]
+  native --> verify["Manager verifies acceptance"]
+  portable --> resume["Checkpoint · handoff · resume"]
+  audited --> resume
+  resume --> verify
 ```
 
 The manager should choose the lightest mode that preserves safe execution and honest
 completion. Do not mirror a native Plan into JSON or Markdown.
 
+Use `define-goal` or an available durable goal tool only when the user requests goal-backed
+execution or the stopping condition is not measurable yet. Goal definition does not itself
+authorize Portable state, Audited controls, or a worker.
+
 ## Progress And Codex Routing
 
-Progress means new evidence, an artifact change, a test result, or a binding decision. Once
-a reversible action can distinguish the current hypotheses, execute it instead of extending
-the plan. After two no-progress cycles, record facts, assumptions, the current hypothesis,
-and one falsifying experiment. If it yields no evidence, stop that reasoning chain.
+Progress means new evidence, an artifact change, a test result, or a binding decision that
+advances a named `done_when` criterion or critical-path blocker. Generated reports, package
+rebuilds, inventory, and auxiliary checks do not count unless that criterion requires them.
+After two no-progress cycles, run one falsifying experiment; if it yields no evidence, stop
+that reasoning chain.
 
-When explicit Codex routing is available, the configured policy keeps the parent on Sol
-`max` for planning and acceptance, and uses Luna `max` for justified long implementation,
-integration, and mechanically verifiable execution. Sol workers remain bounded to one
-planning, fresh-diagnosis, or concrete high-risk review question. Stagnation never raises
-reasoning effort automatically. New runs record
-`progress-bounded-v2`; legacy `cost-aware-v1` Audited runs keep their sealed v1 profile map
-so resume validation does not reinterpret historical dispatches.
+When explicit Codex routing is available, the parent/main Agent uses Sol `high` for the goal,
+short plan, dispatch, status, integration, acceptance, and confirmed v3 micro implementations. A
+locally installed `luna_worker` may run Luna `max` for ordinary or execution-heavy implementation.
+Explicit user delegation selects that worker even for a micro-looking change. Simple mechanical
+batch work remains a separate bounded route. Complex work is parallel only across independent
+modules, and tightly coupled writes remain serial or have one owner. Custom-agent calls use a
+self-contained `fork_turns=none` task; workers are leaves and do not recursively delegate.
+Saying "main agent" does not prove a worker or model ran. If Luna or a requested implementation
+model is unavailable or cannot be resolved, try another verifiable bounded worker; if none is
+available, block implementation unless the user explicitly authorizes parent direct fallback.
+Keep requested versus resolved models separate. Review starts only after a concrete candidate
+exists, and retry requires a new diagnosis or evidence.
 
 ---
 
@@ -207,14 +272,23 @@ flow or visible evidence when those tiers are available.
 
 ## Installation
 
-Clone the repository:
+Install from the repository with the generic Agent Skills installer:
+
+```bash
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+```
+
+The installer discovers the canonical package under `skills/`. To install from a local
+checkout instead:
 
 ```bash
 git clone https://github.com/SUNRNEHUI/agent-reliability-harness.git
 cd agent-reliability-harness
+npx skills add . --skill "agent-reliability-harness"
 ```
 
-Create a clean runtime package:
+For a manual or development installation, verify and copy the same canonical package:
 
 ```bash
 python3 scripts/sync_version.py
@@ -231,13 +305,14 @@ rsync -a --delete --exclude workspace --exclude .harness \
 python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
 ```
 
-The runtime package contains only the files needed by the skill at execution time.
+The copy is byte-for-byte derived from `skills/agent-reliability-harness/`; there is no
+second runtime file list to maintain.
 
 Recommended Codex defaults for this routing policy:
 
 ```toml
 model = "gpt-5.6-sol"
-model_reasoning_effort = "max"
+model_reasoning_effort = "high"
 service_tier = "fast"
 
 [agents]
@@ -246,9 +321,26 @@ default_subagent_reasoning_effort = "max"
 ```
 
 This configuration is optional and remains user-owned. Do not copy a private model cache
-or set `model_catalog_json` as part of skill installation. If Luna is unavailable, retain
-the requested route in evidence, record the runtime-resolved fallback separately, and do
-not claim that a Luna worker ran.
+or set `model_catalog_json` as part of skill installation. If Luna is unavailable, retain the
+requested route in evidence and try another verifiable bounded worker. If no worker can be
+verified, block implementation; parent direct execution requires explicit user authorization.
+Record the runtime-resolved route separately and do not claim that a Luna worker ran.
+
+An optional named worker can make the bounded execution route explicit:
+
+```toml
+# ~/.codex/agents/luna-worker.toml
+name = "luna_worker"
+description = "Handle clearly bounded tasks"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "max"
+developer_instructions = "Execute only the delegated scope, return concise evidence, and do not expand scope."
+```
+
+The skill never creates this personal file. When it is installed and recognized by Codex,
+the adapter uses `fork_turns=none` and sends a self-contained contract. Otherwise it tries
+another verifiable bounded worker; if none is available, implementation is blocked rather than
+silently executed by the parent.
 
 ---
 
@@ -268,33 +360,18 @@ This avoids duplicate skill entries that describe the same workflow.
 
 ## Runtime Package Contents
 
-The runtime package includes:
+`skills/agent-reliability-harness/` is the complete distributable package. It includes:
 
 - `VERSION`
 - `SKILL.md`
-- `master-prompt.md`
-- `sub-prompt.md`
 - `agents/openai.yaml`
 - `adapters/`
-- `references/`
-  - `references/portable-contract.md`
-  - `references/harness-protocol.md`
-  - `references/state-memory-boundary.md`
-  - `references/model-routing.md`
-- `templates/`
-- `scripts/harnessctl.py`
-- `scripts/init_run.py`
-- `scripts/harness_test_run.py`
-- `scripts/protocol_regression_harness.py`
-- `scripts/runtime_profiles.py`
-- `scripts/status.py`
-- `scripts/tdd_gate_check.py`
-- `scripts/validate_report.py`
-- `templates/lite_plan.md`
-- `templates/lite_review.md`
-- `templates/tdd_trace.jsonl`
+- the references directly loaded by `SKILL.md` or the Audited protocol
+- the controller, validator, status, model-routing, TDD, and State Witness scripts
+- only templates copied by runtime commands or required by worker contracts
 
-The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`; this section summarizes the runtime categories.
+The directory itself is authoritative. `scripts/package_skill.py` validates and copies it;
+it does not maintain a second allowlist.
 
 It intentionally excludes:
 
@@ -302,6 +379,9 @@ It intentionally excludes:
 - `README.zh-CN.md`
 - `scripts/sync_version.py`
 - `scripts/package_skill.py`
+- duplicate `master-prompt.md` and `sub-prompt.md`
+- repository regression tests, protocol eval cases, and skill self-scoring tools
+- source-only references and templates with no runtime consumer
 - `.git`
 - generated `.harness/` artifacts
 - generated workspace artifacts
@@ -327,7 +407,8 @@ Small task with multi-agent wording:
 Use multi-agent if needed to fix this typo.
 ```
 
-Expected behavior: stay Native and do not delegate because dispatch overhead is not justified.
+Expected behavior: this is a non-implementation typo, so stay Native and do not delegate;
+implementation requests use one bounded worker by default.
 
 Long task requiring durable coordination:
 
@@ -336,7 +417,8 @@ Refactor checkout, update API contracts, migrate tests, and verify the UI flow. 
 ```
 
 Expected behavior: materialize Portable state because the work must resume; add Audited
-extensions only if the actual risk requires them. Worker use remains a separate decision.
+extensions only if the actual risk requires them. The parent keeps integration and acceptance;
+implementation work uses bounded workers, parallel only where module ownership is independent.
 
 ---
 
@@ -345,7 +427,7 @@ extensions only if the actual risk requires them. Worker use remains a separate 
 For new resumable work, materialize Portable v2:
 
 ```bash
-python3 scripts/harnessctl.py materialize /path/to/project \
+python3 <skill-dir>/scripts/harnessctl.py materialize /path/to/project \
   --title "Checkout Refactor" \
   --goal "Refactor checkout while preserving behavior" \
   --done-when "Checkout regression suite passes" \
@@ -361,10 +443,10 @@ This creates only:
 └── capsule.md
 ```
 
-For Audited controls or legacy Full workflows, initialize the full record set:
+For a new Audited run, initialize the protected record set:
 
 ```bash
-python3 scripts/init_run.py \
+python3 <skill-dir>/scripts/init_run.py \
   --project-root /path/to/project \
   --mode audited \
   --title "Checkout Refactor" \
@@ -389,6 +471,10 @@ This creates:
     └── 1.3-tests.md
 ```
 
+The generated `run_state.json` records `mode: audited`. Existing `mode: full`
+`handoff-v1` artifacts remain readable and resumable, but new examples and defaults do not
+create that legacy mode.
+
 ---
 
 ## Report Validation
@@ -396,13 +482,13 @@ This creates:
 Validate a Portable contract directly:
 
 ```bash
-python3 scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
+python3 <skill-dir>/scripts/harnessctl.py validate /path/to/project/.harness/checkout-refactor
 ```
 
 For Audited or legacy artifacts, validate generated reports before relying on them:
 
 ```bash
-python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
+python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
 ```
 
 Supported artifact types:
@@ -417,7 +503,7 @@ When protocol files such as `acceptance_registry.json` or `run_state.json` sit n
 For TDD-sensitive work, validate the dedicated TDD trace:
 
 ```bash
-python3 scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
+python3 <skill-dir>/scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
 ```
 
 The checker validates chronology for strict TDD, accepts test-first gap evidence when recorded, and rejects missing substitute reasons.
@@ -425,7 +511,7 @@ The checker validates chronology for strict TDD, accepts test-first gap evidence
 Use the test wrapper when available so trace events are generated by the runtime command runner rather than hand-written by an agent:
 
 ```bash
-python3 scripts/harness_test_run.py \
+python3 <skill-dir>/scripts/harness_test_run.py \
   --trace <artifact-dir>/tdd_trace.jsonl \
   --task-id 1.1 \
   --gate-mode strict_tdd \
@@ -439,8 +525,43 @@ For strict TDD cycles, `tdd_gate_check.py --source-path <file>` can add filesyst
 For CI or release gates, require the run to reach high completion confidence:
 
 ```bash
-python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
+python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
 ```
+
+For automation, emit the versioned `arh-status-v1` JSON projection. It remains valid JSON
+when combined with the strict gate and the command exits `1`:
+
+```bash
+python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --json
+```
+
+The runtime package also publishes Draft 2020-12 schemas for Portable contracts, Audited run
+state, acceptance registries, worker results, and status output. See
+[`references/public-contracts.md`](skills/agent-reliability-harness/references/public-contracts.md)
+for the structural-versus-semantic validation boundary.
+
+---
+
+## Development
+
+The runtime and repository checks use the Python standard library:
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 tests/test_runtime_behavior.py
+python3 tests/protocol_regression_harness.py \
+  --skill-root skills/agent-reliability-harness --pretty
+python3 tests/evals/score_forward.py \
+  --cases tests/evals/forward_cases.json --results /path/to/agent-results.json
+python3 scripts/schema_smoke.py
+python3 scripts/package_skill.py --verify-source
+npx --yes skills@1.5.23 add . --list
+git diff --check
+```
+
+The unit suite covers the open package contract as well as runtime behavior. The final
+`npx` check proves that a generic cross-agent installer discovers exactly the canonical
+Skill under `skills/`.
 
 ---
 
@@ -448,31 +569,38 @@ python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidenc
 
 ```text
 agent-reliability-harness/
-├── SKILL.md
+├── skills/
+│   └── agent-reliability-harness/   # complete installable Skill package
+│       ├── SKILL.md
+│       ├── VERSION
+│       ├── adapters/
+│       ├── agents/
+│       ├── references/
+│       ├── schemas/
+│       ├── scripts/
+│       └── templates/
+├── tests/                           # repository regression tests and fixtures
+├── scripts/                         # repository packaging/version tools
+├── docs/                            # non-runtime design and legacy material
 ├── README.md
-├── README.zh-CN.md
-├── adapters/
-├── agents/
-├── references/
-├── scripts/
-├── templates/
-├── master-prompt.md
-└── sub-prompt.md
+└── README.zh-CN.md
 ```
 
-Detailed protocol material lives in `references/`. Runtime-specific guidance lives in `adapters/`.
+The `skills/` directory is the distribution boundary. Repository tests and historical
+materials remain outside it so compatible installers cannot accidentally package them.
 
 ---
 
 ## Runtime Adapters
 
-The protocol is runtime-neutral. Adapters describe how to apply it in specific agent environments:
+The protocol is runtime-neutral. Use this map to jump to the entry point that matches your
+runtime or integration boundary:
 
-- [Codex adapter](adapters/codex.md)
-- [Grok adapter](adapters/grok.md)
-- [Claude Code adapter](adapters/claude-code.md)
-- [Portable Contract v2](references/portable-contract.md)
-- [Audited and legacy protocol](references/harness-protocol.md)
+| Area | Documentation |
+| --- | --- |
+| Runtime adapters | [Codex](skills/agent-reliability-harness/adapters/codex.md) · [Grok](skills/agent-reliability-harness/adapters/grok.md) · [Claude Code](skills/agent-reliability-harness/adapters/claude-code.md) |
+| Durable protocol | [Portable Contract v2](skills/agent-reliability-harness/references/portable-contract.md) · [Audited and legacy protocol](skills/agent-reliability-harness/references/harness-protocol.md) |
+| Public interfaces | [Public JSON and CLI contracts](skills/agent-reliability-harness/references/public-contracts.md) |
 
 Adapters map native planning, worker controls, and optional model profiles to each runtime.
 They must not add provider-specific fields to the Portable contract.
@@ -499,10 +627,69 @@ they fit the selected mode and measured risk.
 
 ## Release History
 
+### v9.3.0
+
+- Published Draft 2020-12 schemas for Portable v2, Audited run state, acceptance registry,
+  worker result, and the new `arh-status-v1` machine projection while keeping semantic,
+  cross-file, chronology, and filesystem checks in the standard-library runtime validators.
+- Added `status.py --json` and restored the published `--require-high-confidence` exit gate;
+  default human output and reporting exit behavior remain compatible.
+- Froze the 19-command `harnessctl.py` surface and key exit behavior with repository-only
+  contract tests before controller modularization.
+- Added Python 3.14 and Windows CI lanes, pinned GitHub Actions to verified full commit SHAs,
+  and added schema, package, and commit-diff smoke gates.
+
+### v9.2.2
+
+- Added a three-level implementation route: qualifying micro changes may stay parent-direct on
+  Sol `high`, ordinary or execution-heavy changes use one bounded Luna `max` worker, and complex
+  work is parallel only across independent module or ownership boundaries.
+- Added the explicit, six-confirmation `--micro-implementation` selector and kept
+  `--implementation` as the worker route; mechanical batch routing remains separate and
+  ambiguous/protected or historical-policy combinations are rejected.
+- Preserved `progress-bounded-v3` and sealed v1/v2 compatibility while retaining requested versus
+  resolved model records, leaf workers, ownership boundaries, retry gates, and approval fallback.
+
+### v9.2.1
+
+- Made the current parent/worker route `progress-bounded-v3`, preserving the `progress-bounded-v2`
+  Codex map for sealed historical runs instead of silently reinterpreting their dispatches.
+- Made missing or unresolvable implementation workers fail closed: try another verifiable
+  bounded worker, then block unless the user explicitly authorizes parent execution.
+- Added explicit sealed-policy selection and rejected mixed implementation/diagnosis routes so
+  Sol decision work cannot silently become implementation.
+
+### v9.2.0
+
+- Moved the complete installable Skill into the open
+  `skills/agent-reliability-harness/` layout and made it the single runtime authority.
+- Separated repository tests, maintenance tools, and legacy design material from the
+  distributable package.
+- Replaced the hand-maintained runtime allowlist with whole-package verification and copy.
+- Added package-contract tests, cross-agent discovery validation, and multi-version CI.
+- Added a portable workflow-composition contract so code tasks reuse local engineering
+  rules without making any companion skill a dependency.
+- Added complexity-proportional delegation: simple implementation uses one bounded worker;
+  genuinely complex work is parallel only across independent module or ownership boundaries,
+  with tightly coupled writes kept serial or under one owner.
+- Added eight repository-only forward-routing cases and a structured scorer for independent
+  Agent behavior checks without packaging eval assets into the runtime Skill.
+- Kept Native a lightweight persistence/evidence path: it does not add references or artifacts
+  solely because the skill triggered, while implementation delegation remains an independent
+  execution-shape decision.
+- Added conditional `luna_worker` routing for self-contained `fork_turns=none` execution;
+  the parent still owns planning and final acceptance.
+- Made new Audited artifacts record `mode: audited` while preserving legacy `mode: full`
+  validation, discovery, TDD digest protection, handoff, and resume.
+- Removed duplicate prompts, development tests/evals, self-scoring tools, and unused source
+  templates from the runtime package without deleting repository regression assets.
+- Tightened progress to the named acceptance boundary and added an explicit Portable
+  checkpoint capsule budget.
+
 ### v9.1.0
 
-- Aligned Codex planning and acceptance with Sol `max`, while keeping justified execution
-  routes on Luna `max`.
+- Established separate Codex parent planning/acceptance and Luna execution routes; v9.2 now
+  makes the parent `Sol high` and child `Luna max` mapping explicit.
 - Documented the optional Codex parent/sub-agent configuration and kept private model-cache
   overrides outside the distributed skill.
 - Clarified that routed profiles do not replace the active parent session and that requested

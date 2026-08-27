@@ -8,35 +8,35 @@ import re
 from pathlib import Path
 
 
+SKILL_NAME = "agent-reliability-harness"
+SKILL_ROOT = Path("skills") / SKILL_NAME
+
 VERSION_PATTERNS = {
     "README.md": (
         (
-            re.compile(r"^Current version: \*\*v[^*]+\*\* · .*$", re.MULTILINE),
+            re.compile(
+                r"^Current version: \*\*v[^*]+\*\* · (?P<date>.*)$",
+                re.MULTILINE,
+            ),
             "Current version: **v{version}** · {date}",
         ),
     ),
     "README.zh-CN.md": (
         (
-            re.compile(r"^当前版本：\*\*v[^*]+\*\* · .*$", re.MULTILINE),
+            re.compile(
+                r"^当前版本：\*\*v[^*]+\*\* · (?P<date>.*)$",
+                re.MULTILINE,
+            ),
             "当前版本：**v{version}** · {date}",
         ),
     ),
-    "SKILL.md": (
+    str(SKILL_ROOT / "SKILL.md"): (
         (
-            re.compile(r"^\*Agent (?:Dispatch|Reliability) Harness v[^|]+ \| [^*]+\*$", re.MULTILINE),
+            re.compile(
+                r"^\*Agent (?:Dispatch|Reliability) Harness v[^|]+ \| (?P<date>[^*]+)\*$",
+                re.MULTILINE,
+            ),
             "*Agent Reliability Harness v{version} | {date}*",
-        ),
-    ),
-    "master-prompt.md": (
-        (
-            re.compile(r"^\*Master Prompt v[^|]+ \| [^*]+\*$", re.MULTILINE),
-            "*Master Prompt v{version} | {date}*",
-        ),
-    ),
-    "sub-prompt.md": (
-        (
-            re.compile(r"^\*Sub-Agent Prompt v[^|]+ \| [^*]+\*$", re.MULTILINE),
-            "*Sub-Agent Prompt v{version} | {date}*",
         ),
     ),
 }
@@ -50,13 +50,16 @@ def parse_args() -> argparse.Namespace:
         default=Path(__file__).resolve().parents[1],
         help="Repository root. Defaults to the parent of scripts/.",
     )
-    parser.add_argument("--date", default="2026-08-02", help="Release date to write with --fix.")
+    parser.add_argument(
+        "--date",
+        help="Release date to write with --fix. Existing dates are preserved when omitted.",
+    )
     parser.add_argument("--fix", action="store_true", help="Rewrite current-version references.")
     return parser.parse_args()
 
 
 def read_version(root: Path) -> str:
-    path = root / "VERSION"
+    path = root / SKILL_ROOT / "VERSION"
     if not path.is_file():
         raise SystemExit(f"missing VERSION file: {path}")
     version = path.read_text(encoding="utf-8").strip()
@@ -65,17 +68,26 @@ def read_version(root: Path) -> str:
     return version
 
 
-def sync_file(path: Path, version: str, date: str, fix: bool) -> list[str]:
+def sync_file(
+    path: Path,
+    patterns: tuple[tuple[re.Pattern[str], str], ...],
+    version: str,
+    date: str | None,
+    fix: bool,
+) -> list[str]:
     content = path.read_text(encoding="utf-8")
     updated = content
     errors: list[str] = []
 
-    for pattern, replacement in VERSION_PATTERNS[path.name]:
-        expected = replacement.format(version=version, date=date)
-        matches = pattern.findall(updated)
-        if not matches:
+    for pattern, replacement in patterns:
+        match = pattern.search(updated)
+        if match is None:
             errors.append(f"{path.name}: missing current-version pattern {pattern.pattern!r}")
             continue
+        expected = replacement.format(
+            version=version,
+            date=date if date is not None else match.group("date"),
+        )
         updated = pattern.sub(expected, updated, count=1)
 
     if updated != content:
@@ -92,12 +104,12 @@ def main() -> int:
     version = read_version(root)
 
     errors: list[str] = []
-    for filename in VERSION_PATTERNS:
-        path = root / filename
+    for relative, patterns in VERSION_PATTERNS.items():
+        path = root / relative
         if not path.is_file():
             errors.append(f"missing file: {path}")
             continue
-        errors.extend(sync_file(path, version, args.date, args.fix))
+        errors.extend(sync_file(path, patterns, version, args.date, args.fix))
 
     if errors:
         print("FAIL version sync")

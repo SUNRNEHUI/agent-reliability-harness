@@ -174,7 +174,7 @@ python3 <skill-dir>/scripts/harnessctl.py checkpoint <project-root> --runtime gr
 python3 <skill-dir>/scripts/harnessctl.py handoff <project-root> --actor-id <actor> --owner-epoch <epoch> --next-action "run focused tests" --reason "clean runtime switch"
 python3 <skill-dir>/scripts/harnessctl.py validate <artifact-dir>
 python3 <skill-dir>/scripts/harnessctl.py seal <artifact-dir> --reason "reviewed synthesis baseline"
-python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> --worker-id <runtime-worker-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md --runtime codex --profile main --requested-model gpt-5.6-luna --reasoning-effort xhigh --route-reason "default high-frequency manager"
+python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> --worker-id <runtime-worker-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md --runtime codex --profile fast --requested-model gpt-5.6-luna --reasoning-effort max --route-reason "bounded child implementation worker"
 python3 <skill-dir>/scripts/harnessctl.py dispatch-update <artifact-dir> --dispatch-id <id> --status reported
 python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status ready
 python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status running

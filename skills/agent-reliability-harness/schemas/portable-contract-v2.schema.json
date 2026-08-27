@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-reliability-harness:portable:v2",
+  "title": "Agent Reliability Harness Portable Contract v2",
+  "description": "Structural contract for .harness/<slug>/contract.json. Filesystem, digest, and transition semantics remain runtime checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol",
+    "mode",
+    "id",
+    "title",
+    "artifact_dir",
+    "project_root",
+    "created_at",
+    "updated_at",
+    "status",
+    "objective",
+    "execution",
+    "decisions",
+    "workspace",
+    "ownership",
+    "evidence",
+    "capabilities",
+    "context",
+    "extensions"
+  ],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "protocol": { "const": "arh-portable-v2" },
+    "mode": { "const": "portable" },
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "artifact_dir": { "type": "string", "minLength": 1 },
+    "project_root": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["active", "accepted", "failed", "cancelled"] },
+    "objective": { "$ref": "#/$defs/objective" },
+    "execution": { "$ref": "#/$defs/execution" },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/decision" }
+    },
+    "workspace": { "$ref": "#/$defs/workspace" },
+    "ownership": { "$ref": "#/$defs/ownership" },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "capabilities": { "$ref": "#/$defs/capabilities" },
+    "context": { "$ref": "#/$defs/context" },
+    "extensions": { "type": "object" }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goal", "done_when", "non_goals", "constraints"],
+      "properties": {
+        "goal": { "type": "string", "minLength": 1 },
+        "done_when": { "$ref": "#/$defs/nonEmptyStringList" },
+        "non_goals": { "$ref": "#/$defs/stringList" },
+        "constraints": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current_milestone", "completed", "next_action", "pending_verification", "blockers"],
+      "properties": {
+        "current_milestone": { "type": "string" },
+        "completed": { "$ref": "#/$defs/stringList" },
+        "next_action": { "type": "string" },
+        "pending_verification": { "$ref": "#/$defs/stringList" },
+        "blockers": { "$ref": "#/$defs/stringList" },
+        "terminal_reason": { "type": "string" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "reason", "recorded_at"],
+      "properties": {
+        "decision": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "recorded_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoint"],
+      "properties": {
+        "checkpoint": { "$ref": "#/$defs/repositorySnapshot" }
+      }
+    },
+    "repositorySnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "cwd", "branch", "head", "dirty_paths", "dirty_entries", "worktree_digest"],
+      "properties": {
+        "root": { "type": "string" },
+        "cwd": { "type": "string" },
+        "branch": { "type": "string" },
+        "head": { "type": "string" },
+        "dirty_paths": { "$ref": "#/$defs/stringList" },
+        "dirty_entries": { "type": "object", "additionalProperties": { "type": "string" } },
+        "worktree_digest": { "type": "string" }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "owner", "previous_owner", "takeover_count"],
+      "properties": {
+        "status": { "enum": ["unclaimed", "active", "ready", "closed"] },
+        "owner": { "$ref": "#/$defs/owner" },
+        "previous_owner": { "type": "object" },
+        "takeover_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor_id", "runtime", "epoch", "claimed_at"],
+      "properties": {
+        "actor_id": { "type": "string" },
+        "runtime": { "type": "string" },
+        "epoch": { "type": "integer", "minimum": 0 },
+        "claimed_at": { "type": "string" }
+      }
+    },
+    "evidence": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["id", "type", "source_role", "subject", "result", "payload", "verification"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "type": { "type": "string", "minLength": 1 },
+            "source_role": { "type": "string", "minLength": 1 },
+            "subject": { "type": "string", "minLength": 1 },
+            "result": { "type": "string", "minLength": 1 },
+            "verification_tier": { "enum": ["policy", "flow", "user_visible"] },
+            "payload": { "type": "object" },
+            "verification": { "$ref": "#/$defs/verification" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "verification": {
+      "type": "object",
+      "required": ["status", "method", "verified_by", "verified_at", "transaction_id"],
+      "properties": {
+        "status": { "type": "string" },
+        "method": { "type": "string" },
+        "verified_by": { "type": "string" },
+        "verified_at": { "type": "string" },
+        "transaction_id": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "optional"],
+      "properties": {
+        "required": { "$ref": "#/$defs/stringList" },
+        "optional": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["must_read", "read_if_needed"],
+      "properties": {
+        "must_read": { "$ref": "#/$defs/stringList" },
+        "read_if_needed": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "nonEmptyStringList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

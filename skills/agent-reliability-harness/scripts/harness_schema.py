@@ -6,8 +6,13 @@ from __future__ import annotations
 
 SCHEMA_VERSION = 1
 LEGACY_MODEL_ROUTING_POLICY = "cost-aware-v1"
-MODEL_ROUTING_POLICY = "progress-bounded-v2"
-MODEL_ROUTING_POLICIES = (MODEL_ROUTING_POLICY, LEGACY_MODEL_ROUTING_POLICY)
+SEALED_MODEL_ROUTING_POLICY = "progress-bounded-v2"
+MODEL_ROUTING_POLICY = "progress-bounded-v3"
+MODEL_ROUTING_POLICIES = (
+    MODEL_ROUTING_POLICY,
+    SEALED_MODEL_ROUTING_POLICY,
+    LEGACY_MODEL_ROUTING_POLICY,
+)
 AGENT_PROFILES = {"fast", "main", "planner", "critical_reviewer"}
 
 

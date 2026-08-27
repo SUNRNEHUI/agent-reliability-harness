@@ -3,12 +3,26 @@
 
 from __future__ import annotations
 
-from harness_schema import LEGACY_MODEL_ROUTING_POLICY, MODEL_ROUTING_POLICY
+from harness_schema import (
+    LEGACY_MODEL_ROUTING_POLICY,
+    MODEL_ROUTING_POLICY,
+    SEALED_MODEL_ROUTING_POLICY,
+)
 
 
 SUPPORTED_MODEL_RUNTIMES = {"codex", "grok"}
 
 CODEX_MODEL_PROFILES = {
+    "fast": {"model": "gpt-5.6-luna", "reasoning_effort": "max"},
+    "main": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+    "planner": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+    "critical_reviewer": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+}
+
+# The v2 map is immutable for existing run_state.json files.  New runs use the
+# v3 parent/worker split above; validation must never reinterpret a sealed v2
+# dispatch just because the current defaults changed.
+SEALED_CODEX_MODEL_PROFILES = {
     "fast": {"model": "gpt-5.6-luna", "reasoning_effort": "max"},
     "main": {"model": "gpt-5.6-luna", "reasoning_effort": "max"},
     "planner": {"model": "gpt-5.6-sol", "reasoning_effort": "max"},
@@ -36,6 +50,10 @@ RUNTIME_MODEL_PROFILES = {
 
 RUNTIME_MODEL_PROFILES_BY_POLICY = {
     MODEL_ROUTING_POLICY: RUNTIME_MODEL_PROFILES,
+    SEALED_MODEL_ROUTING_POLICY: {
+        "codex": SEALED_CODEX_MODEL_PROFILES,
+        "grok": GROK_MODEL_PROFILES,
+    },
     LEGACY_MODEL_ROUTING_POLICY: {
         "codex": LEGACY_CODEX_MODEL_PROFILES,
         "grok": GROK_MODEL_PROFILES,

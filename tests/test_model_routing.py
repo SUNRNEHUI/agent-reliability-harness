@@ -20,6 +20,7 @@ from runtime_profiles import (  # noqa: E402
     CODEX_MODEL_PROFILES,
     GROK_MODEL_PROFILES,
     LEGACY_CODEX_MODEL_PROFILES,
+    SEALED_CODEX_MODEL_PROFILES,
     model_profiles_for,
 )
 from model_router import resolve_configuration, select_profile  # noqa: E402
@@ -30,13 +31,35 @@ class _Args:
     def __init__(self, **kwargs):
         self.simple = kwargs.get("simple", False)
         self.mechanically_verifiable = kwargs.get("mechanically_verifiable", False)
+        self.implementation = kwargs.get("implementation", False)
+        self.micro_implementation = kwargs.get("micro_implementation", False)
+        self.micro_scope_local = kwargs.get("micro_scope_local", False)
+        self.micro_low_risk = kwargs.get("micro_low_risk", False)
+        self.micro_no_protected_boundary = kwargs.get("micro_no_protected_boundary", False)
+        self.micro_context_complete = kwargs.get("micro_context_complete", False)
+        self.micro_short_verification = kwargs.get("micro_short_verification", False)
+        self.micro_delegation_cost_higher = kwargs.get("micro_delegation_cost_higher", False)
         self.fuzzy = kwargs.get("fuzzy", False)
         self.harness_synthesis = kwargs.get("harness_synthesis", False)
         self.high_risk = kwargs.get("high_risk", False)
+        self.protected_boundary = kwargs.get("protected_boundary", False)
+        self.public_contract = kwargs.get("public_contract", False)
+        self.migration = kwargs.get("migration", False)
         self.worker_conflict = kwargs.get("worker_conflict", False)
         self.validation_failures = kwargs.get("validation_failures", 0)
         self.no_progress_cycles = kwargs.get("no_progress_cycles", 0)
         self.new_diagnosis = kwargs.get("new_diagnosis", False)
+        self.routing_policy = kwargs.get("routing_policy", "progress-bounded-v3")
+
+
+MICRO_CONFIRMATIONS = {
+    "micro_scope_local": True,
+    "micro_low_risk": True,
+    "micro_no_protected_boundary": True,
+    "micro_context_complete": True,
+    "micro_short_verification": True,
+    "micro_delegation_cost_higher": True,
+}
 
 
 class ProfileSelectionTests(unittest.TestCase):
@@ -44,6 +67,85 @@ class ProfileSelectionTests(unittest.TestCase):
         profile, reasons = select_profile(_Args(simple=True, mechanically_verifiable=True))
         self.assertEqual(profile, "fast")
         self.assertEqual(reasons, ["simple", "mechanically_verifiable"])
+
+    def test_implementation_defaults_to_child_worker_route(self):
+        profile, reasons = select_profile(_Args(implementation=True))
+        self.assertEqual(profile, "fast")
+        self.assertEqual(reasons, ["implementation_worker"])
+
+    def test_micro_implementation_uses_parent_direct_route(self):
+        profile, reasons = select_profile(
+            _Args(micro_implementation=True, **MICRO_CONFIRMATIONS)
+        )
+        self.assertEqual(profile, "main")
+        self.assertEqual(reasons, ["micro_implementation_direct"])
+
+    def test_micro_implementation_requires_every_explicit_confirmation(self):
+        labels = {
+            "micro_scope_local": "scope-local",
+            "micro_low_risk": "low-risk",
+            "micro_no_protected_boundary": "no-protected-boundary",
+            "micro_context_complete": "context-complete",
+            "micro_short_verification": "short-verification",
+            "micro_delegation_cost_higher": "delegation-cost-higher",
+        }
+        for missing, label in labels.items():
+            confirmations = dict(MICRO_CONFIRMATIONS)
+            confirmations.pop(missing)
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(ValueError, "explicit confirmations") as raised:
+                    select_profile(_Args(micro_implementation=True, **confirmations))
+                self.assertIn(label, str(raised.exception))
+
+    def test_micro_implementation_rejects_protected_boundaries(self):
+        for boundary in ("high_risk", "protected_boundary", "public_contract", "migration"):
+            with self.subTest(boundary=boundary):
+                with self.assertRaisesRegex(ValueError, "cannot combine"):
+                    select_profile(
+                        _Args(
+                            micro_implementation=True,
+                            **MICRO_CONFIRMATIONS,
+                            **{boundary: True},
+                        )
+                    )
+
+    def test_micro_implementation_is_current_v3_only(self):
+        for policy in ("progress-bounded-v2", "cost-aware-v1"):
+            with self.subTest(policy=policy):
+                with self.assertRaisesRegex(ValueError, "current routing policy"):
+                    select_profile(
+                        _Args(
+                            micro_implementation=True,
+                            routing_policy=policy,
+                            **MICRO_CONFIRMATIONS,
+                        )
+                    )
+
+    def test_micro_and_worker_routes_cannot_be_combined(self):
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            select_profile(_Args(implementation=True, micro_implementation=True))
+
+    def test_micro_route_does_not_alias_mechanical_batch_route(self):
+        for flags in (
+            {"simple": True},
+            {"mechanically_verifiable": True},
+            {"simple": True, "mechanically_verifiable": True},
+        ):
+            with self.subTest(flags=flags):
+                with self.assertRaisesRegex(ValueError, "mechanical batch"):
+                    select_profile(_Args(micro_implementation=True, **flags))
+
+    def test_implementation_cannot_mix_with_sol_decision_route(self):
+        for flags in (
+            {"fuzzy": True},
+            {"harness_synthesis": True},
+            {"high_risk": True},
+            {"worker_conflict": True},
+            {"validation_failures": 2, "new_diagnosis": True},
+        ):
+            with self.subTest(flags=flags):
+                with self.assertRaisesRegex(ValueError, "cannot combine"):
+                    select_profile(_Args(implementation=True, **flags))
 
     def test_simple_alone_is_main(self):
         profile, _ = select_profile(_Args(simple=True))
@@ -73,15 +175,15 @@ class RuntimeMapTests(unittest.TestCase):
         self.assertEqual(GROK_MODEL_PROFILES["fast"]["reasoning_effort"], "low")
         self.assertEqual(GROK_MODEL_PROFILES["critical_reviewer"]["reasoning_effort"], "xhigh")
 
-    def test_codex_execution_and_sol_burst_map(self):
+    def test_codex_parent_and_worker_map(self):
         self.assertEqual(CODEX_MODEL_PROFILES["fast"]["model"], "gpt-5.6-luna")
         self.assertEqual(CODEX_MODEL_PROFILES["fast"]["reasoning_effort"], "max")
-        self.assertEqual(CODEX_MODEL_PROFILES["main"]["model"], "gpt-5.6-luna")
-        self.assertEqual(CODEX_MODEL_PROFILES["main"]["reasoning_effort"], "max")
+        self.assertEqual(CODEX_MODEL_PROFILES["main"]["model"], "gpt-5.6-sol")
+        self.assertEqual(CODEX_MODEL_PROFILES["main"]["reasoning_effort"], "high")
         self.assertEqual(CODEX_MODEL_PROFILES["planner"]["model"], "gpt-5.6-sol")
-        self.assertEqual(CODEX_MODEL_PROFILES["planner"]["reasoning_effort"], "max")
+        self.assertEqual(CODEX_MODEL_PROFILES["planner"]["reasoning_effort"], "high")
         self.assertEqual(CODEX_MODEL_PROFILES["critical_reviewer"]["model"], "gpt-5.6-sol")
-        self.assertEqual(CODEX_MODEL_PROFILES["critical_reviewer"]["reasoning_effort"], "max")
+        self.assertEqual(CODEX_MODEL_PROFILES["critical_reviewer"]["reasoning_effort"], "high")
 
     def test_model_profiles_for(self):
         self.assertIsNone(model_profiles_for("claude"))
@@ -96,6 +198,13 @@ class RuntimeMapTests(unittest.TestCase):
         legacy["fast"]["reasoning_effort"] = "mutated"
         self.assertEqual(LEGACY_CODEX_MODEL_PROFILES["fast"]["reasoning_effort"], "medium")
 
+    def test_progress_bounded_v2_is_sealed(self):
+        sealed = model_profiles_for("codex", "progress-bounded-v2")
+        self.assertEqual(sealed, SEALED_CODEX_MODEL_PROFILES)
+        assert sealed is not None
+        self.assertEqual(sealed["main"], {"model": "gpt-5.6-luna", "reasoning_effort": "max"})
+        self.assertEqual(model_profiles_for("codex")["main"], CODEX_MODEL_PROFILES["main"])
+
     def test_resolve_configuration_runtime(self):
         cfg, overrides = resolve_configuration("grok", "fast")
         self.assertEqual(cfg["model"], "grok-api")
@@ -103,6 +212,13 @@ class RuntimeMapTests(unittest.TestCase):
         self.assertEqual(overrides, [])
         with self.assertRaises(ValueError):
             resolve_configuration("claude", "fast")
+
+    def test_resolve_configuration_reads_sealed_v2_policy(self):
+        cfg, overrides = resolve_configuration(
+            "codex", "main", routing_policy="progress-bounded-v2"
+        )
+        self.assertEqual(cfg, {"model": "gpt-5.6-luna", "reasoning_effort": "max"})
+        self.assertEqual(overrides, [])
 
 
 class CliRouterTests(unittest.TestCase):
@@ -125,6 +241,140 @@ class CliRouterTests(unittest.TestCase):
 
     def test_cli_codex_default(self):
         payload = self._run("--runtime", "codex")
+        self.assertEqual(payload["policy"], "progress-bounded-v3")
+        self.assertEqual(payload["profile"], "main")
+        self.assertEqual(payload["model"], "gpt-5.6-sol")
+        self.assertEqual(payload["reasoning_effort"], "high")
+
+    def test_cli_codex_simple_implementation_uses_worker_route(self):
+        payload = self._run("--runtime", "codex", "--simple", "--mechanically-verifiable")
+        self.assertEqual(payload["profile"], "fast")
+        self.assertEqual(payload["model"], "gpt-5.6-luna")
+        self.assertEqual(payload["reasoning_effort"], "max")
+
+    def test_cli_codex_micro_implementation_uses_parent_route(self):
+        payload = self._run(
+            "--runtime",
+            "codex",
+            "--micro-implementation",
+            "--micro-scope-local",
+            "--micro-low-risk",
+            "--micro-no-protected-boundary",
+            "--micro-context-complete",
+            "--micro-short-verification",
+            "--micro-delegation-cost-higher",
+        )
+        self.assertEqual(payload["profile"], "main")
+        self.assertEqual(payload["model"], "gpt-5.6-sol")
+        self.assertEqual(payload["reasoning_effort"], "high")
+        self.assertEqual(payload["reason_codes"], ["micro_implementation_direct"])
+
+    def test_cli_rejects_micro_without_confirmation(self):
+        blocked = subprocess.run(
+            [sys.executable, str(SCRIPTS / "model_router.py"), "--runtime", "codex", "--micro-implementation"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("explicit confirmations", (blocked.stdout + blocked.stderr).casefold())
+
+    def test_cli_codex_complex_implementation_uses_worker_route(self):
+        payload = self._run("--runtime", "codex", "--implementation")
+        self.assertEqual(payload["profile"], "fast")
+        self.assertEqual(payload["model"], "gpt-5.6-luna")
+        self.assertEqual(payload["reasoning_effort"], "max")
+        self.assertEqual(payload["reason_codes"], ["implementation_worker"])
+
+    def test_cli_rejects_sol_decision_and_implementation_mix(self):
+        blocked = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "model_router.py"),
+                "--runtime",
+                "codex",
+                "--implementation",
+                "--high-risk",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("cannot combine", (blocked.stdout + blocked.stderr).casefold())
+
+    def test_cli_rejects_ambiguous_micro_and_worker_routes(self):
+        blocked = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "model_router.py"),
+                "--runtime",
+                "codex",
+                "--micro-implementation",
+                "--implementation",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("mutually exclusive", (blocked.stdout + blocked.stderr).casefold())
+
+    def test_cli_rejects_micro_mechanical_batch_mix(self):
+        blocked = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "model_router.py"),
+                "--runtime",
+                "codex",
+                "--micro-implementation",
+                "--mechanically-verifiable",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("mechanical batch", (blocked.stdout + blocked.stderr).casefold())
+
+    def test_cli_rejects_micro_on_sealed_historical_policies(self):
+        confirmation_args = [
+            "--micro-implementation",
+            "--micro-scope-local",
+            "--micro-low-risk",
+            "--micro-no-protected-boundary",
+            "--micro-context-complete",
+            "--micro-short-verification",
+            "--micro-delegation-cost-higher",
+        ]
+        for policy in ("progress-bounded-v2", "cost-aware-v1"):
+            with self.subTest(policy=policy):
+                blocked = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPTS / "model_router.py"),
+                        "--runtime",
+                        "codex",
+                        "--routing-policy",
+                        policy,
+                        *confirmation_args,
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(blocked.returncode, 2)
+                output = (blocked.stdout + blocked.stderr).casefold()
+                self.assertIn("current routing policy", output)
+                self.assertNotIn("micro_implementation_direct", output)
+
+    def test_cli_reads_sealed_v2_main_route(self):
+        payload = self._run(
+            "--runtime",
+            "codex",
+            "--routing-policy",
+            "progress-bounded-v2",
+        )
         self.assertEqual(payload["policy"], "progress-bounded-v2")
         self.assertEqual(payload["profile"], "main")
         self.assertEqual(payload["model"], "gpt-5.6-luna")
@@ -202,7 +452,7 @@ class DispatchValidationTests(unittest.TestCase):
         return {
             "version": 1,
             "evidence_policy": "typed-v1",
-            "routing_policy": "progress-bounded-v2",
+            "routing_policy": "progress-bounded-v3",
             "created_at": "2026-07-17T00:00:00Z",
             "updated_at": "2026-07-17T00:00:00Z",
             "title": "routing-test",
@@ -403,6 +653,20 @@ class DispatchValidationTests(unittest.TestCase):
         errors = self._validate(state)
         self.assertEqual(errors, [], errors)
 
+    def test_sealed_v2_main_dispatch_keeps_luna_route(self):
+        state = self._base_state()
+        state["routing_policy"] = "progress-bounded-v2"
+        state["state_layers"]["session_state"]["delegation_state"] = [
+            self._dispatch(
+                runtime="codex",
+                profile="main",
+                requested_model="gpt-5.6-luna",
+                reasoning_effort="max",
+            )
+        ]
+        errors = self._validate(state)
+        self.assertEqual(errors, [], errors)
+
 
 class DocsTests(unittest.TestCase):
     def test_adapter_and_example_exist(self):
@@ -416,6 +680,8 @@ class DocsTests(unittest.TestCase):
         self.assertIn("## Grok Policy", routing)
         self.assertIn("every profile", routing.casefold())
         self.assertIn("`grok-api`", routing)
+        self.assertIn("parent", routing.casefold())
+        self.assertIn("child", routing.casefold())
 
         example = (SKILL_ROOT / "references" / "examples" / "grok-fast-model-config.toml").read_text(
             encoding="utf-8"

@@ -35,10 +35,17 @@ effort.
 
 ## Subagents
 
-Use native subagents for disjoint, read-heavy exploration, tests, triage, or review when
-parallel work materially improves time or quality. They consume additional tokens, so do
-not dispatch a worker for work the main thread can finish more cheaply. Avoid parallel
-writes to shared files or state.
+Use three implementation lanes. The v3 micro lane requires explicit, auditable confirmations of
+`scope-local`, `low-risk`, `no-protected-boundary`, `context-complete`, `short-verification`, and
+`delegation-cost-higher`; these assertions are not automatic proof, and the parent must verify
+their truth. A confirmed micro implementation may stay in the parent/main thread. Ordinary or
+execution-heavy implementation uses one bounded native child worker by default when the runtime
+exposes one. Complex work may use parallel workers only for independent modules; tightly coupled
+writes stay serial or under one owner. Keep shared configuration, entrypoints, lockfiles, shared
+tests, and generated files with the integration owner. A user's explicit delegation request
+overrides the micro direct choice. Non-implementation work stays in the active thread when
+delegation adds no value. The parent owns the goal, short plan, dispatch, status, integration, and
+acceptance. Child workers are leaves and do not recursively delegate.
 
 Persist only worker goal, ownership, result envelope, and evidence needed for continuation.
 Native thread IDs may be supporting metadata but cannot be required by another runtime.
@@ -54,26 +61,35 @@ conditional: do not assume another installation has the same agent.
 - Do not send it fuzzy architecture, product decisions, or final acceptance ownership.
 - Confirm the spawned agent type and resolved model from runtime evidence before reporting
   that Luna ran.
-- If the named agent is unavailable, keep work in the active Native thread or use the
-  runtime's available worker fallback. Do not create configuration as a side effect of a task.
+- If the named agent is unavailable, try another verifiable bounded worker. If no such worker
+  is available, block implementation unless the user explicitly authorizes parent direct execution
+  for that task. This authorization is a fallback for a failed worker route, not a reason to turn
+  ordinary implementation into an untracked parent loop. If the requested model cannot be parsed
+  or resolved, record the unresolved route and do not claim that the requested child or model ran.
+  Do not create configuration as a side effect of a task.
+
+Parent direct execution requires explicit user authorization when it is used as a worker-route
+fallback.
 
 ## Optional Model Routing
 
-Model selection follows mode selection and remains adapter-local. When explicit routing is
-available, use `gpt-5.6-luna` with `max` for both long-running implementation/integration and
-mechanically verifiable execution. A tiny task stays in the active thread when dispatch
-would cost more than the work.
+Model selection follows mode selection and remains adapter-local. The parent/main Agent uses
+`gpt-5.6-sol` with `high` for the goal, short plan, dispatch, status, integration, acceptance,
+and a confirmed v3 micro implementation. A child execution Agent uses `gpt-5.6-luna` with `max`
+for one bounded ordinary, heavy, mechanical, or independently verifiable task. The `main`
+profile is the parent manager/direct-micro route; `fast` is the child route. Keep mechanical
+batch routing distinct from the `--micro-implementation` selector signal. Do not use the micro
+route with sealed v1/v2 policies; historical runs retain their original maps.
 
-The active Codex parent may remain on `gpt-5.6-sol` with `max` as planner and acceptance
-owner. The `main` profile below is an execution route, not the parent session default.
+Use Sol `high` for one bounded planning or diagnosis question, or one concrete high-risk
+acceptance review. Give it an explicit output contract and stop rule. Do not route a stalled
+path to Sol until a new diagnosis exists; use `model_router.py --new-diagnosis` after
+recording the changed hypothesis or evidence.
 
-Use `gpt-5.6-sol` with `max` only as a bounded burst for one planning or diagnosis question,
-or one concrete high-risk acceptance review. Give it an explicit output contract and stop
-rule. Do not route a stalled path to Sol until a new diagnosis exists; use
-`model_router.py --new-diagnosis` after recording the changed hypothesis or evidence.
-
-Record requested and resolved models separately. If the runtime cannot honor a profile,
-continue with its safe fallback and never claim that a model switch occurred.
+Before acceptance, inspect the actual diff and integration boundary and run decisive
+verification; never rely only on a worker report. Record requested and resolved models
+separately. If the runtime cannot honor an implementation profile, try another verifiable
+bounded worker; otherwise block unless the user explicitly authorizes parent execution.
 
 ## Permissions And Tools
 

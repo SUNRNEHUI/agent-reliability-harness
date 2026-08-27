@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-reliability-harness:acceptance-registry:v1",
+  "title": "Agent Reliability Harness Acceptance Registry v1",
+  "description": "Structural contract for acceptance_registry.json. Evidence qualification, task binding, and terminal-state semantics remain runtime checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "created_at", "title", "tdd_trace_path", "criteria"],
+  "properties": {
+    "version": { "const": 1 },
+    "evidence_policy": { "type": "string" },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string" },
+    "title": { "type": "string" },
+    "tdd_trace_path": { "const": "tdd_trace.jsonl" },
+    "completion_rule": { "type": "string" },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/criterion" }
+    }
+  },
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "status",
+        "required_evidence",
+        "required_verification_tier",
+        "pass_algorithm",
+        "evidence",
+        "owner",
+        "verification_gate"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "status": { "enum": ["pending", "pass", "fail", "blocked", "scoped_out"] },
+        "required_evidence": { "type": "array" },
+        "success_criteria": { "type": "array" },
+        "required_verification_tier": { "enum": ["policy", "flow", "user_visible"] },
+        "pass_algorithm": { "type": "string" },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "owner": { "type": "string" },
+        "verification_gate": { "$ref": "#/$defs/verificationGate" },
+        "linked_tasks": { "type": "array", "items": { "type": "string" } },
+        "blocking_issues": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "verificationGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "tdd_trace_path", "red_command", "red_result", "red_failure_reason", "green_command", "green_result", "refactor_check", "substitute_check", "no_test_reason"],
+      "properties": {
+        "mode": { "enum": ["strict_tdd", "test_first_evidence", "substitute", "not_applicable"] },
+        "tdd_trace_path": { "type": "string" },
+        "red_command": { "type": "string" },
+        "red_result": { "type": "string" },
+        "red_failure_reason": { "type": "string" },
+        "green_command": { "type": "string" },
+        "green_result": { "type": "string" },
+        "refactor_check": { "type": "string" },
+        "substitute_check": { "type": "string" },
+        "no_test_reason": { "type": "string" }
+      }
+    },
+    "evidence": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["id", "type", "source_role", "subject", "result", "payload", "verification"],
+          "properties": {
+            "id": { "type": "string" },
+            "type": { "type": "string" },
+            "source_role": { "type": "string" },
+            "subject": { "type": "string" },
+            "result": { "type": "string" },
+            "verification_tier": { "enum": ["policy", "flow", "user_visible"] },
+            "payload": { "type": "object" },
+            "verification": { "type": "object" }
+          }
+        }
+      ]
+    }
+  }
+}

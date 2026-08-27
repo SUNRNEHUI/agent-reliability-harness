@@ -1,0 +1,401 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-reliability-harness:audited-run-state:v1",
+  "title": "Agent Reliability Harness Audited Run State v1",
+  "description": "Structural contract for audited run_state.json, including readable legacy mode full. Cross-file digests, transitions, gates, and filesystem semantics remain runtime checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "created_at",
+    "updated_at",
+    "title",
+    "mode",
+    "artifact_dir",
+    "trace_path",
+    "tdd_trace_path",
+    "state_layers",
+    "continuation",
+    "state_witness",
+    "tdd_current_cycle_context",
+    "status",
+    "current_stage",
+    "synthesis",
+    "stages",
+    "tasks",
+    "generated_files",
+    "stop_reason"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "evidence_policy": { "type": "string" },
+    "routing_policy": { "type": "string" },
+    "created_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "mode": { "enum": ["audited", "full"] },
+    "artifact_dir": { "type": "string", "minLength": 1 },
+    "trace_path": { "const": "trace.jsonl" },
+    "tdd_trace_path": { "const": "tdd_trace.jsonl" },
+    "state_layers": { "$ref": "#/$defs/stateLayers" },
+    "continuation": { "$ref": "#/$defs/continuation" },
+    "state_witness": { "$ref": "#/$defs/stateWitness" },
+    "tdd_current_cycle_context": { "$ref": "#/$defs/tddContext" },
+    "status": {
+      "enum": [
+        "intake",
+        "gated",
+        "specified",
+        "dispatched",
+        "reported",
+        "evaluating",
+        "accepted",
+        "handed_off",
+        "blocked",
+        "needs_decision",
+        "failed",
+        "unplanned"
+      ]
+    },
+    "current_stage": { "type": "string" },
+    "synthesis": { "$ref": "#/$defs/synthesis" },
+    "stages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stage" }
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/task" }
+    },
+    "task_shape": { "$ref": "#/$defs/task" },
+    "run_evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "generated_files": { "$ref": "#/$defs/stringList" },
+    "stop_reason": { "type": "string" }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "stateLayers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["working_state", "session_state", "execution_log", "memory_boundary"],
+      "properties": {
+        "working_state": { "$ref": "#/$defs/workingState" },
+        "session_state": { "$ref": "#/$defs/sessionState" },
+        "execution_log": { "$ref": "#/$defs/executionLog" },
+        "memory_boundary": { "$ref": "#/$defs/memoryBoundary" }
+      }
+    },
+    "workingState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current_stage", "current_task", "active_blockers", "volatile_notes", "updated_at"],
+      "properties": {
+        "current_stage": { "type": "string" },
+        "current_task": { "type": "string" },
+        "active_blockers": { "$ref": "#/$defs/stringList" },
+        "volatile_notes": { "$ref": "#/$defs/stringList" },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "sessionState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shared_decisions", "shared_assumptions", "artifact_paths", "delegation_state"],
+      "properties": {
+        "shared_decisions": { "type": "array" },
+        "shared_assumptions": { "type": "array" },
+        "artifact_paths": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "required": ["task_spec", "progress", "acceptance_registry", "trace", "tdd_trace", "lessons"]
+        },
+        "delegation_state": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dispatch" }
+        },
+        "document_priority": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "executionLog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trace_path", "tdd_trace_path", "append_only"],
+      "properties": {
+        "trace_path": { "const": "trace.jsonl" },
+        "tdd_trace_path": { "const": "tdd_trace.jsonl" },
+        "append_only": { "const": true }
+      }
+    },
+    "memoryBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "memory_candidates", "promotion_required"],
+      "properties": {
+        "policy": { "type": "string" },
+        "memory_candidates": { "type": "array" },
+        "promotion_required": { "type": "string" }
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "status", "owner", "previous_owner", "takeover_count", "checkpoint", "last_resume"],
+      "properties": {
+        "protocol": { "const": "handoff-v1" },
+        "status": { "enum": ["unclaimed", "active", "ready"] },
+        "owner": { "$ref": "#/$defs/owner" },
+        "previous_owner": { "type": "object" },
+        "takeover_count": { "type": "integer", "minimum": 0 },
+        "checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "last_resume": { "$ref": "#/$defs/lastResume" }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor_id", "runtime", "epoch", "claimed_at"],
+      "properties": {
+        "actor_id": { "type": "string" },
+        "runtime": { "type": "string" },
+        "epoch": { "type": "integer", "minimum": 0 },
+        "claimed_at": { "type": "string" }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sequence", "checkpointed_at", "actor_id", "runtime", "reason", "current_task", "next_action", "pending_verification", "repository"],
+      "properties": {
+        "id": { "type": "string" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "checkpointed_at": { "type": "string" },
+        "actor_id": { "type": "string" },
+        "runtime": { "type": "string" },
+        "reason": { "type": "string" },
+        "current_task": { "type": "string" },
+        "next_action": { "type": "string" },
+        "pending_verification": { "$ref": "#/$defs/stringList" },
+        "repository": { "$ref": "#/$defs/repository" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "cwd", "branch", "head", "dirty_paths", "dirty_entries", "worktree_digest"],
+      "properties": {
+        "root": { "type": "string" },
+        "cwd": { "type": "string" },
+        "branch": { "type": "string" },
+        "head": { "type": "string" },
+        "dirty_paths": { "$ref": "#/$defs/stringList" },
+        "dirty_entries": { "type": "object", "additionalProperties": { "type": "string" } },
+        "worktree_digest": { "type": "string" }
+      }
+    },
+    "lastResume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resumed_at", "actor_id", "runtime", "takeover_reason", "forced"],
+      "properties": {
+        "resumed_at": { "type": "string" },
+        "actor_id": { "type": "string" },
+        "runtime": { "type": "string" },
+        "takeover_reason": { "type": "string" },
+        "forced": { "type": "boolean" }
+      }
+    },
+    "stateWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "path", "required_tier", "observed_tier", "review_status", "reviewer_id", "review_evidence", "sealed_digest", "reviewed_at"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "path": { "type": "string" },
+        "required_tier": { "enum": ["policy", "flow", "user_visible"] },
+        "observed_tier": { "enum": ["", "policy", "flow", "user_visible"] },
+        "review_status": { "enum": ["not_required", "pending", "pass", "fail", "blocked"] },
+        "reviewer_id": { "type": "string" },
+        "review_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "sealed_digest": { "type": "string" },
+        "reviewed_at": { "type": "string" }
+      }
+    },
+    "tddContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "gate_mode", "phase", "command", "result", "exit_code", "trace_path", "stdout_tail", "stderr_tail", "retry_count", "max_retries", "updated_at"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "gate_mode": { "type": "string" },
+        "phase": { "type": "string" },
+        "command": { "type": "string" },
+        "result": { "type": "string" },
+        "exit_code": { "type": ["integer", "null"] },
+        "trace_path": { "const": "tdd_trace.jsonl" },
+        "stdout_tail": { "type": "string" },
+        "stderr_tail": { "type": "string" },
+        "retry_count": { "type": "integer", "minimum": 0 },
+        "max_retries": { "type": "integer", "minimum": 0 },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "synthesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "fuzzy_goal", "alignment_packet_path", "checklist", "recommended_defaults", "open_questions"],
+      "properties": {
+        "status": { "type": "string" },
+        "fuzzy_goal": { "type": "boolean" },
+        "alignment_packet_path": { "type": "string" },
+        "checklist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rewritten_goal", "fake_success_list", "constraints_nongoals", "pass_algorithms", "risk_ordered_phases", "first_ready_task", "stop_conditions"],
+          "properties": {
+            "rewritten_goal": { "type": "boolean" },
+            "fake_success_list": { "type": "boolean" },
+            "constraints_nongoals": { "type": "boolean" },
+            "pass_algorithms": { "type": "boolean" },
+            "risk_ordered_phases": { "type": "boolean" },
+            "first_ready_task": { "type": "boolean" },
+            "stop_conditions": { "type": "boolean" }
+          }
+        },
+        "recommended_defaults": { "type": "array" },
+        "open_questions": { "type": "array" }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "status", "tasks", "evidence", "stop_reason"],
+      "properties": {
+        "id": { "type": ["string", "integer"] },
+        "name": { "type": "string" },
+        "status": { "$ref": "#/$defs/taskStatus" },
+        "tasks": { "$ref": "#/$defs/stringList" },
+        "budget": { "type": "string" },
+        "resource_budget": { "$ref": "#/$defs/resourceBudget" },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "stop_reason": { "type": "string" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "stage", "status", "owner", "allowed_scope", "dependencies", "expected_outputs", "verification", "verification_gate", "retry_count", "evidence", "stop_reason"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "stage": { "type": ["string", "integer", "null"] },
+        "status": { "$ref": "#/$defs/taskStatus" },
+        "owner": { "type": "string" },
+        "allowed_scope": { "$ref": "#/$defs/stringList" },
+        "dependencies": { "$ref": "#/$defs/stringList" },
+        "task_path": { "type": "string" },
+        "report_path": { "type": "string" },
+        "expected_outputs": { "$ref": "#/$defs/stringList" },
+        "verification": { "$ref": "#/$defs/stringList" },
+        "verification_gate": { "$ref": "#/$defs/verificationGate" },
+        "retry_count": { "type": "integer", "minimum": 0 },
+        "budget": { "type": "string" },
+        "resource_budget": { "$ref": "#/$defs/resourceBudget" },
+        "runtime_budget_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "required_cwd": { "type": "string" },
+        "repository_root": { "type": "string" },
+        "required_branch": { "type": "string" },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "stop_reason": { "type": "string" }
+      }
+    },
+    "taskStatus": {
+      "enum": ["planned", "ready", "running", "blocked", "verify_failed", "passed", "merged", "cancelled", "unplanned"]
+    },
+    "resourceBudget": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["token_budget"],
+      "properties": {
+        "token_budget": { "type": "integer", "minimum": 0 },
+        "tokens_used": { "type": "integer", "minimum": 0 },
+        "tokens_remaining": { "type": "integer" },
+        "usage_kind": { "type": "string" }
+      }
+    },
+    "verificationGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "tdd_trace_path", "red_command", "red_result", "red_failure_reason", "green_command", "green_result", "refactor_check", "substitute_check", "no_test_reason"],
+      "properties": {
+        "mode": { "enum": ["strict_tdd", "test_first_evidence", "substitute", "not_applicable"] },
+        "tdd_trace_path": { "type": "string" },
+        "red_command": { "type": "string" },
+        "red_result": { "type": "string" },
+        "red_failure_reason": { "type": "string" },
+        "green_command": { "type": "string" },
+        "green_result": { "type": "string" },
+        "refactor_check": { "type": "string" },
+        "substitute_check": { "type": "string" },
+        "no_test_reason": { "type": "string" }
+      }
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dispatch_id", "worker_id", "task_id", "contract_path", "report_path", "status", "created_at", "updated_at", "stop_reason"],
+      "properties": {
+        "dispatch_id": { "type": "string" },
+        "worker_id": { "type": "string" },
+        "task_id": { "type": "string" },
+        "contract_path": { "type": "string" },
+        "report_path": { "type": "string" },
+        "status": { "enum": ["dispatched", "running", "reported", "failed", "cancelled"] },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "stop_reason": { "type": "string" },
+        "runtime": { "type": "string" },
+        "profile": { "type": "string" },
+        "requested_model": { "type": "string" },
+        "resolved_model": { "type": "string" },
+        "reasoning_effort": { "type": "string" },
+        "route_reason": { "type": "string" },
+        "escalation_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evidence": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["id", "type", "source_role", "subject", "result", "payload", "verification"],
+          "properties": {
+            "id": { "type": "string" },
+            "type": { "type": "string" },
+            "source_role": { "type": "string" },
+            "subject": { "type": "string" },
+            "result": { "type": "string" },
+            "verification_tier": { "enum": ["policy", "flow", "user_visible"] },
+            "payload": { "type": "object" },
+            "verification": { "type": "object" }
+          }
+        }
+      ]
+    }
+  }
+}

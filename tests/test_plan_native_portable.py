@@ -75,17 +75,22 @@ class WorkflowCompositionPolicyTests(unittest.TestCase):
 
 
 class ComplexityAndDelegationPolicyTests(unittest.TestCase):
-    def test_simple_work_stays_direct_and_complex_work_tracks_bounded_modules(self) -> None:
+    def test_mode_does_not_change_bounded_implementation_delegation(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         normalized = " ".join(skill.split()).casefold()
 
         for term in (
-            "small and clear, execute it directly in the current thread",
+            "delegation is independent of mode",
+            "v3 micro work may stay on the parent/main",
+            "ordinary or execution-heavy work uses one",
+            "explicit user delegation overrides the micro direct route",
+            "coupled writes stay serial",
+            "they do not recursively delegate",
             "one runtime plan",
-            "independent module or ownership boundaries",
-            "track each worker's status and evidence",
-            "task size alone does not require durable state",
-            "coordination costs more than execution",
+            "independent modules or ownership boundaries",
+            "track worker status and evidence",
+            "mode controls persistence and evidence depth",
+            "`delegation-cost-higher` confirmations",
         ):
             self.assertIn(term, normalized)
 

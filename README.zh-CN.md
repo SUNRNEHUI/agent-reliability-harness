@@ -1,12 +1,40 @@
+<div align="center">
+
 # Agent Reliability Harness
 
-简体中文 | [English](README.md)
+**面向 AI 编程代理的运行时中立续接与验收控制。**
+
+简体中文 · [English](README.md)
+
+[![Release](https://img.shields.io/github/v/release/SUNRNEHUI/agent-reliability-harness?display_name=tag&sort=semver)](https://github.com/SUNRNEHUI/agent-reliability-harness/releases) [![CI](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SUNRNEHUI/agent-reliability-harness/actions/workflows/ci.yml) [![Python 3.10–3.14](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![许可证：未指定](https://img.shields.io/badge/license-not%20specified-lightgrey)](#许可证)
+
+</div>
+
+当前版本：**v9.3.0** · 2026-08-27
 
 Agent Reliability Harness 是一个面向 Codex、Claude Code、Grok 及其他具备文件与
 shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运行时原生 Plan；只有
 任务必须跨越边界时才物化紧凑、provider-neutral 的合同；只有风险需要时才增加审计控制。
 
-当前版本：**v9.2.0** · 2026-08-22
+**选择合适的最轻模式**
+
+| 需求 | 模式 | 持久状态 |
+| --- | --- | --- |
+| 在当前 session 内完成并验证 | **Native** | 无；使用运行时 Plan |
+| 跨 session/model 或外部等待后继续 | **Portable** | `contract.json`、`events.jsonl`、`capsule.md` |
+| 证明高风险、发布、安全或生产任务 | **Audited** | Portable 状态加必要的证据与审查控制 |
+
+**快速开始**
+
+```bash
+npx skills add https://github.com/SUNRNEHUI/agent-reliability-harness --skill "agent-reliability-harness"
+```
+
+[概览](#概览) · [执行模式](#执行模式) · [安装](#安装) · [文档导航](#运行时适配) · [版本历史](#版本历史)
+
+> **v9.3.0 亮点：** 发布 Draft 2020-12 公共 Schema、`arh-status-v1` JSON 投影、恢复
+> confidence gate，冻结 19 个 controller 命令，并增加 Python 3.14 / Windows CI 与固定
+> SHA 的 Actions。
 
 ---
 
@@ -21,7 +49,9 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 - 选择 Native、Portable 或 Audited
 - 定义结果、约束、授权边界和可观察的 `done_when`
 - 只物化昂贵或不安全的重建信息
-- 只在责任边界独立时分配 worker
+- 按比例选择实现路径：v3 微型改动必须先显式确认 scope/risk/context/verification/cost，
+  才能由 parent 直接完成；普通/重实现使用一个有界 worker，复杂任务只有在责任边界独立
+  时才并行
 - 停止没有产生可观察进展的推理循环
 - 在声明完成前验证验收证据
 
@@ -45,8 +75,9 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
   约束性决策；连续两轮无进展且没有新诊断时停止。
 - **可组合工程工作流：** 代码实现与验证复用当前仓库规则或可用的匹配 coding skill；
   不复制，也不强制依赖某个具名 companion skill。
-- **按复杂度执行：** 简单任务留在主线程直接完成；大型任务只拆独立模块，并跟踪 worker
-  状态与证据。
+- **按复杂度委派：** v3 微型、局部、低风险且上下文完整的实现，只有显式确认六项 gate
+  后才可由 parent 直接完成；普通或执行较重的实现只派一个有界 worker；复杂任务只在
+  独立模块边界并行，强耦合写入保持串行或由单一 owner 负责。
 - **精简打包：** 排除重复 prompt、仓库测试/eval、生成的 `.harness/` / `workspace/`
   artifact、缓存、session 和私有配置。
 
@@ -60,10 +91,14 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 | **Portable** | 工作可能跨 session/model、等待外部状态，或 worker 结果必须跨 context loss 保留。 | `.harness/<slug>/contract.json`、`events.jsonl`、`capsule.md` |
 | **Audited** | 生产、发布、权限、安全、破坏性变更、owner 争议或高假完成风险需要更强证据。 | Portable 状态加按风险启用的证据与审查扩展；兼容 legacy Full。 |
 
-并行与模式相互独立。大型顺序任务可以保持 Native；小型交接可以是 Portable；
-一个文件的高风险变更也可以是 Audited。
-简单明确的任务留在当前线程。大型任务只有在存在独立模块或责任边界，且收益高于协调
-成本时才使用多个 Agent。
+委派与模式相互独立。Native、Portable、Audited 只决定持久化和证据深度，不会把微型
+实现变成更重的流程。v3 微型、局部、低风险、上下文明确、一个短验证周期即可证明且
+委派成本更高的实现，必须显式确认 scope-local、low-risk/no-protected-boundary、
+context-complete、short-verification、delegation-cost-higher 后，才可由 parent 直接完成。
+这些确认是可审计的路由断言，不是自动事实证明；parent 仍负责验证真实性。普通或执行较重
+的实现只派一个有界 worker。复杂任务只有在存在独立模块或责任边界且收益高于协调成本时
+才并行；强耦合写入保持串行或由单一 owner 负责。用户显式要求委派时，覆盖微型实现的
+direct 选择。
 
 ---
 
@@ -79,22 +114,26 @@ shell 能力代理的 Plan-native 可靠性 skill。普通任务直接复用运�
 - 分头处理 / 分别派 / 拆给不同 agent
 - 证据化验收或高假完成风险
 
-触发 skill 不等于选择 worker 或最重模式。仓库现有流程足够时，普通实现、规划和测试
-保持 Native。只有 worker 的有界责任能带来大于协调成本的收益时才派发。
+触发 skill 不等于选择最重模式。普通实现可以保持 Native；符合条件的微型实现可以由
+parent 直接完成，普通/重实现则在运行时可派发时使用一个有界 worker，复杂实现只在独立
+责任边界并行。规划、审查和非实现工作在协调成本更高时可以留在父 Agent 线程。机械批量
+是独立的有界路径，不等同于微型实现。
 
 ---
 
 ## 运行流程
 
-```text
-Native Plan
--> 定义 outcome / constraints / done_when / approval boundary
--> 选择 Native / Portable / Audited
--> 直接执行，或把独立模块拆给有界 worker
--> 在运行时 Plan 中跟踪 worker 状态与证据
--> 连续两轮无进展时停止或重新诊断
--> 用可观察证据验证
--> 只在持久边界 checkpoint 或 handoff
+```mermaid
+flowchart LR
+  plan["Native Plan"] --> define["定义 outcome · constraints · done_when"]
+  define --> choose{"选择模式"}
+  choose -->|Native| native["在当前 session 执行"]
+  choose -->|Portable| portable["物化三文件合同"]
+  choose -->|Audited| audited["增加证据与审查控制"]
+  native --> verify["主代理验证验收"]
+  portable --> resume["Checkpoint · handoff · resume"]
+  audited --> resume
+  resume --> verify
 ```
 
 主代理应选择能够保证安全执行和真实完成的最轻模式。不要把原生 Plan 再复制到 JSON
@@ -109,11 +148,15 @@ Native Plan
 结果或约束性决策。生成报告、重建 package、扩大清单和辅助检查不推进该验收边界时不算
 进展。连续两轮无进展后只运行一个证伪实验；仍没有新证据就停止该推理链。
 
-当 Codex 支持显式路由时，父 Agent 按其已配置的 Sol effort 负责规划和验收。本机已安装
-的 `luna_worker` 可以用 Luna `max` 执行确有派发价值的长任务、机械任务或独立可验证任务。
-自定义 Agent 调用使用自包含的 `fork_turns=none` 任务。说“你是主 agent”不会自动启动
-它；只有具体候选结果出现后才审查，只有新诊断或新证据出现后才重试。requested model
-和 resolved model 分开记录。
+当 Codex 支持显式路由时，父/主 Agent 使用 Sol `high` 持有目标、短计划、分发、状态、
+整合、验收，以及完成六项确认的 v3 微型实现。本机已安装的 `luna_worker` 使用 Luna `max` 执行
+普通或执行较重的实现。用户显式要求委派时，即使改动看起来很小，也选择该 worker。机械
+批量保持独立的有界路径；复杂任务只在独立模块间并行，强耦合写入保持串行或由单一 owner
+负责。自定义 Agent 调用使用自包含的 `fork_turns=none` 任务；子 Agent 是叶节点，不递归委派。
+说“你是主 agent”不能证明 worker 或 model 已运行。如果 Luna 或 requested implementation
+model 不可用、无法解析，先尝试另一个可验证的 bounded worker；仍没有就阻塞实现，除非用户
+明确授权 parent 直接作为 fallback。分别记录 requested model 和 resolved model，不能虚假声称。
+只有具体候选结果出现后才审查，只有新诊断或新证据出现后才重试。
 
 ---
 
@@ -244,7 +287,7 @@ python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harne
 
 ```toml
 model = "gpt-5.6-sol"
-model_reasoning_effort = "max"
+model_reasoning_effort = "high"
 service_tier = "fast"
 
 [agents]
@@ -253,8 +296,9 @@ default_subagent_reasoning_effort = "max"
 ```
 
 这段配置是可选的，始终由用户自行维护。Skill 安装过程不复制私有 model cache，也不
-设置 `model_catalog_json`。如果 Luna 不可用，应保留 requested route，并单独记录运行时
-实际解析的 fallback；不能声称 Luna worker 已经运行。
+设置 `model_catalog_json`。如果 Luna 不可用，应保留 requested route，并尝试另一个可验证的
+bounded worker；没有可验证 worker 就阻塞实现，只有用户明确授权时 parent 才能直接执行。
+单独记录运行时实际解析的 route；不能声称 Luna worker 已经运行。
 
 可选的命名 worker 可以把有界执行通道显式化：
 
@@ -268,8 +312,8 @@ developer_instructions = "只执行明确委派任务，返回简洁证据结果
 ```
 
 Skill 不会创建这个个人配置文件。Codex 已安装并识别它时，adapter 使用
-`fork_turns=none` 并发送自包含任务；缺少它时正常 fallback，不把缺少命名 Agent 当作
-任务失败。
+`fork_turns=none` 并发送自包含任务；缺少它时尝试另一个可验证的 bounded worker；仍没有
+就阻塞实现，不得静默由 parent 执行。
 
 ---
 
@@ -335,7 +379,8 @@ runtime 包会排除：
 如果需要可以用多智能体，帮我修正这个错别字。
 ```
 
-预期行为：保持 Native，不进行调度，因为协调开销没有必要。
+预期行为：这是非实现类错别字修改，保持 Native，不进行调度；实现请求默认只派一个有界
+worker。
 
 需要持久化协同的长任务：
 
@@ -344,7 +389,7 @@ runtime 包会排除：
 ```
 
 预期行为：因为任务必须续跑，所以物化 Portable 状态；只有实际风险需要时才增加
-Audited 扩展。是否使用 worker 仍是独立决策。
+Audited 扩展。父 Agent 负责整合和验收；实现工作使用有界 worker，只在模块责任独立时并行。
 
 ---
 
@@ -453,6 +498,17 @@ python3 <skill-dir>/scripts/harness_test_run.py \
 python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
 ```
 
+自动化场景可以输出版本化的 `arh-status-v1` JSON 投影。它与 strict gate 组合时仍只输出
+合法 JSON，并以退出码 `1` 表示未达到 high confidence：
+
+```bash
+python3 <skill-dir>/scripts/status.py <artifact-dir>/run_state.json --json
+```
+
+runtime 包还发布 Portable contract、Audited run state、acceptance registry、worker result
+和 status output 的 Draft 2020-12 Schema。结构校验与语义校验的边界见
+[`references/public-contracts.md`](skills/agent-reliability-harness/references/public-contracts.md)。
+
 ---
 
 ## 开发验证
@@ -466,6 +522,7 @@ python3 tests/protocol_regression_harness.py \
   --skill-root skills/agent-reliability-harness --pretty
 python3 tests/evals/score_forward.py \
   --cases tests/evals/forward_cases.json --results /path/to/agent-results.json
+python3 scripts/schema_smoke.py
 python3 scripts/package_skill.py --verify-source
 npx --yes skills@1.5.23 add . --list
 git diff --check
@@ -487,6 +544,7 @@ agent-reliability-harness/
 │       ├── adapters/
 │       ├── agents/
 │       ├── references/
+│       ├── schemas/
 │       ├── scripts/
 │       └── templates/
 ├── tests/                           # 仓库回归测试与 fixture
@@ -502,13 +560,13 @@ agent-reliability-harness/
 
 ## 运行时适配
 
-协议本身不绑定特定运行时。适配文档说明如何在不同代理环境中落地：
+协议本身不绑定特定运行时。按运行时或集成边界，从下面的文档导航进入：
 
-- [Codex adapter](skills/agent-reliability-harness/adapters/codex.md)
-- [Grok adapter](skills/agent-reliability-harness/adapters/grok.md)
-- [Claude Code adapter](skills/agent-reliability-harness/adapters/claude-code.md)
-- [Portable Contract v2](skills/agent-reliability-harness/references/portable-contract.md)
-- [Audited 与 legacy 协议](skills/agent-reliability-harness/references/harness-protocol.md)
+| 领域 | 文档 |
+| --- | --- |
+| 运行时适配 | [Codex](skills/agent-reliability-harness/adapters/codex.md) · [Grok](skills/agent-reliability-harness/adapters/grok.md) · [Claude Code](skills/agent-reliability-harness/adapters/claude-code.md) |
+| 持久协议 | [Portable Contract v2](skills/agent-reliability-harness/references/portable-contract.md) · [Audited 与 legacy 协议](skills/agent-reliability-harness/references/harness-protocol.md) |
+| 公开接口 | [公开 JSON 与 CLI 契约](skills/agent-reliability-harness/references/public-contracts.md) |
 
 适配文档把原生 planning、worker 控制和可选模型 profile 映射到不同运行时，但不能把
 provider-specific 字段加入 Portable contract。
@@ -534,6 +592,36 @@ Native / Portable / Audited 选择始终先执行。只有支持方法适合当�
 
 ## 版本历史
 
+### v9.3.0
+
+- 发布 Portable v2、Audited run state、acceptance registry、worker result 以及新增
+  `arh-status-v1` 机器投影的 Draft 2020-12 Schema；跨文件、时序、文件系统和语义检查
+  继续由标准库 runtime validator 负责。
+- 新增 `status.py --json`，并恢复已公开的 `--require-high-confidence` 退出 gate；默认人读
+  输出与报告型退出语义保持兼容。
+- 在拆分 controller 前，用仅仓库使用的契约测试冻结 `harnessctl.py` 的 19 个命令及关键
+  退出行为。
+- CI 增加 Python 3.14 与 Windows lane，将 GitHub Actions 固定到已核验的完整 commit SHA，
+  并增加 Schema、runtime 包和 commit diff smoke gate。
+
+### v9.2.2
+
+- 新增三级实现路径：符合条件的微型改动由 parent 的 Sol `high` 直接完成；普通或执行较重
+  的改动使用一个 Luna `max` 有界 worker；复杂任务只有在独立模块或责任边界时才并行。
+- 新增必须带六项确认的 `--micro-implementation` selector，并保留 `--implementation` 作为
+  worker 路径；机械批量保持独立，冲突、受保护边界或历史 policy flags 会被拒绝。
+- 保留 `progress-bounded-v3` 与 v1/v2 sealed 兼容，同时保留 requested/resolved model、叶
+  节点、ownership、重试门禁和审批 fallback 语义。
+
+### v9.2.1
+
+- 将当前父/子路由版本化为 `progress-bounded-v3`，保留 `progress-bounded-v2` Codex
+  映射供历史 sealed run 使用，不静默重解释既有 dispatch。
+- 实现 worker 缺失或无法解析时 fail-closed：先尝试另一个可验证的 bounded worker，仍无
+  worker 就阻塞，除非用户明确授权 parent 直接执行。
+- 新增显式 sealed policy 选择，并拒绝 implementation 与诊断/审查路由混用，避免 Sol
+  决策路径静默变成实现路径。
+
 ### v9.2.0
 
 - 将完整可安装 Skill 迁移到开放的 `skills/agent-reliability-harness/` 布局，并把它设为
@@ -543,12 +631,12 @@ Native / Portable / Audited 选择始终先执行。只有支持方法适合当�
 - 新增包结构契约测试、跨 Agent 发现验证和多 Python 版本 CI。
 - 新增可移植的工作流组合契约：代码任务复用本地工程规则，但不把任何 companion skill
   变成硬依赖。
-- 新增按复杂度执行规则：简单任务直接处理，真正复杂的任务才使用可跟踪、按模块划分的
-  多 Agent 执行。
+- 新增按复杂度委派规则：简单实现只派一个有界 worker；真正复杂的任务只在独立模块或
+  责任边界并行，强耦合写入保持串行或由单一 owner 负责。
 - 新增 8 个仅仓库使用的前向路由场景和结构化 scorer，用独立 Agent 检查真实行为，但不把
   eval 资产打进 runtime Skill。
-- 将 Native 做成真正的一次判断快速路径：不会仅因 skill 触发就加载 reference、创建
-  artifact、路由模型或派发 worker。
+- 保持 Native 为轻量的持久化/证据路径：不会仅因 skill 触发就加载 reference 或创建
+  artifact；是否委派实现 worker 由执行形状独立决定。
 - 新增条件式 `luna_worker` 路由，用自包含的 `fork_turns=none` 任务执行；父 Agent 仍
   负责规划与最终验收。
 - 新 Audited artifact 写入 `mode: audited`，同时保留旧 `mode: full` 的校验、发现、
@@ -559,7 +647,8 @@ Native / Portable / Audited 选择始终先执行。只有支持方法适合当�
 
 ### v9.1.0
 
-- 将 Codex 规划和验收统一到 Sol `max`，同时继续把确有必要的执行路由给 Luna `max`。
+- 建立 Codex 父 Agent 的规划/验收与 Luna 执行通道；v9.2 明确父 Agent 使用 `Sol high`、
+  子 Agent 使用 `Luna max`。
 - 记录可选的 Codex 父 Agent / 子 Agent 配置，并把私有 model cache 覆盖排除在分发包外。
 - 明确 routed profile 不会替代活跃父线程，并要求分别记录 requested model 与 resolved model。
 

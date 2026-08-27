@@ -25,7 +25,7 @@
       "expected": {
         "mode": "native",
         "load_coding_workflow": true,
-        "delegation": "none",
+        "delegation": "bounded",
         "durable_artifacts": false,
         "approval": "not_required"
       }
@@ -92,6 +92,28 @@
         "mode": "native",
         "load_coding_workflow": false,
         "delegation": "none",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_micro_implementation",
+      "prompt": "在当前小模块里修一个局部、低风险、上下文完整的小实现；一个短测试就能证明，委派成本更高。请显式确认 scope-local、low-risk/no-protected-boundary、context-complete、short-verification、delegation-cost-higher 后直接完成。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": true,
+        "delegation": "none",
+        "durable_artifacts": false,
+        "approval": "not_required"
+      }
+    },
+    {
+      "id": "native_micro_explicit_delegation",
+      "prompt": "这是一个微型、局部且低风险的实现，但我明确要求你委派一个有界 worker 完成并回报验证证据。",
+      "expected": {
+        "mode": "native",
+        "load_coding_workflow": true,
+        "delegation": "bounded",
         "durable_artifacts": false,
         "approval": "not_required"
       }

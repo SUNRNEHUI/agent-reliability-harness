@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-reliability-harness:worker-result:v2",
+  "title": "Agent Reliability Harness Worker Result v2",
+  "description": "Structural envelope for the worker_result.json handoff. The manager still verifies evidence and owns merge/acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "report", "outputs", "evidence", "decision"],
+  "properties": {
+    "schema": { "const": "arh-worker-result-v2" },
+    "status": { "enum": ["done", "blocked", "failed", "needs_decision", "cancelled"] },
+    "report": { "type": "string" },
+    "outputs": {
+      "type": "array",
+      "items": { "oneOf": [{ "type": "string" }, { "type": "object" }] }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "oneOf": [{ "type": "string" }, { "type": "object" }] }
+    },
+    "decision": {
+      "type": ["object", "string", "null"]
+    }
+  }
+}

@@ -28,62 +28,63 @@ Choose once before adding process:
 | **Portable** | Work must survive a session/model boundary, external wait, or context loss. | `.harness/<slug>/contract.json`, `events.jsonl`, `capsule.md` |
 | **Audited** | A protected or disputed boundary needs typed proof. | Only justified witness, receipt, fencing, or trace controls. |
 
-If Native fits, stop routing and start the smallest executable or testable slice. Do not
-load references, route models, create harness files, or dispatch a worker solely because
-this skill triggered. Task size alone does not require durable state.
+If Native fits, keep persistence/evidence light. Do not load references, create harness files, or
+add audit controls solely because this skill triggered. Mode controls persistence and evidence depth;
+delegation is independent of mode.
 
 ## Execution Shape
 
-If work is small and clear, execute it directly in the current thread. For large or complex
-work, write one runtime plan before dispatch. Split only at independent module or ownership
-boundaries; when modules can progress independently, delegate them and track each
-worker's status and evidence in runtime task state. Do not delegate tightly coupled work or
-when coordination costs more than execution.
+Use three routes. V3 micro work may stay on the parent/main route only after explicit
+`scope-local`, `low-risk/no-protected-boundary`, `context-complete`, `short-verification`, and
+`delegation-cost-higher` confirmations; the parent checks their truth. Ordinary or execution-heavy
+work uses one bounded worker. Complex work parallelizes only independent modules or ownership
+boundaries; coupled writes stay serial or have one owner. Explicit user delegation overrides the
+micro direct route. Non-implementation work may stay in the current thread. Write one runtime
+plan before dispatch and track worker status and evidence in runtime state.
 
-Saying "main agent" establishes acceptance ownership; this does not authorize delegation.
-The main agent owns planning, integration, and acceptance. Workers need bounded scope, an
-output contract, verification, and a stop rule. Retry only when diagnosis changes the task
-or evidence.
+Main agent owns goal, plan, dispatch, status, integration, and acceptance. It inspects the
+diff/boundary and runs decisive verification; worker reports never establish completion. Workers
+need bounded scope, output, verification, and a stop rule; they do not recursively delegate.
+Try another verifiable bounded worker first. If none exists or resolution fails, block; parent
+fallback needs explicit user authorization. Never claim an unverified route. Retry only when
+diagnosis changes the task or evidence.
 
 ## Goal And Acceptance
 
-Name outcome, observable `done_when`, constraints, approval boundaries, non-goals, and
-decisive evidence. Use the runtime plan; do not mirror it into another checklist. Use a
-durable goal tool only at user request or when the objective is not measurable.
+Name outcome, observable `done_when`, constraints, approval boundaries, non-goals, and evidence.
+Use runtime plan; do not mirror it. Use a durable goal tool at user request or
+when the objective is not measurable.
 
-Prefer external evidence. Persist observable state, never hidden reasoning, chats, secrets,
-or provider sessions. Plans, reports, scores, reviews, and harness PASS are not completion.
+Prefer evidence. Persist observable state, never hidden reasoning, chats, secrets, or provider
+sessions. Plans, reports, scores, reviews, and PASS are not completion.
 
 ## Progress Circuit Breaker
 
 Count only **new evidence**, an **artifact change**, a **test result**, or a **binding
 decision** that advances a named `done_when` criterion or named critical-path blocker.
-Activity outside that boundary does not count as progress. Generated metadata, reports,
+Activity outside it does not count as progress. Generated metadata, reports,
 package rebuilds, broad inventory, and auxiliary tests do not reset the breaker unless the
 criterion requires them.
 
-After two consecutive no-progress cycles, mark the path `STALLED`, separate facts from
-assumptions, and run the cheapest falsifying experiment. If it yields no evidence, stop that
-reasoning chain; use at most one fresh bounded diagnosis or report the blocker. Stagnation
-must not increase reasoning effort or worker fan-out.
+After two consecutive no-progress cycles, mark `STALLED`, separate facts/assumptions, and run
+the cheapest falsifying experiment. If no evidence, stop; use at most one fresh bounded
+diagnosis or report the blocker. Stagnation must not increase reasoning effort or fan-out.
 
 ## Durable And Audited Work
 
-Materialize Portable state only after the plan is actionable and a real durability trigger
-exists. Checkpoint only at verified boundaries; the contract is source of truth and the
-bounded capsule is generated resume context. Read `references/portable-contract.md` before
-materialize, handoff, resume, or close.
+Materialize Portable state after an actionable plan and durability trigger. Checkpoint at
+verified boundaries; contract is source of truth and capsule is generated resume context. Read
+`references/portable-contract.md` before materialize, handoff, resume, or close.
 
-For Audited work, protect only the risky transition or claim with the necessary witness,
-test chronology, receipt, fencing, or approval. Read `references/harness-protocol.md` and
-the one control-specific reference before adding artifacts. New runs use `mode: audited`;
-legacy `mode: full` remains readable and resumable.
+For Audited work, protect the risky transition or claim with witness, test chronology, receipt,
+fencing, or approval. Read `references/harness-protocol.md` and one control reference before
+adding artifacts. New runs use `mode: audited`; legacy `mode: full` remains readable and resumable.
 
 ## Accept And Stop
 
-Inspect the smallest decisive evidence before completion. Stop for unresolved approval,
-scope expansion, ownership conflict, missing environment, unsafe effects, or repeated
-failure without new diagnosis. Report changed files, verification, risk, and next action.
+Inspect decisive evidence before completion. Stop for unresolved approval, scope expansion,
+ownership conflict, missing environment, unsafe effects, or repeated failure without new
+diagnosis. Report files, verification, risk, and next action.
 
 ## Load On Demand
 
@@ -95,12 +96,12 @@ failure without new diagnosis. Report changed files, verification, risk, and nex
 | Stateful behavior | `references/state-witness.md` |
 | Protected TDD chronology | `references/tdd-gates.md` |
 | Detailed stop rules | `references/stop-conditions.md` |
+| Public JSON/CLI contracts | `references/public-contracts.md` |
 | Runtime behavior | one relevant file under `adapters/` |
 | Optional model routing | `references/model-routing.md` plus the runtime adapter |
 
-Default to this file only. Load one additional reference only when the selected mode or a
-real blocker requires it.
+Default here. Load one reference only when the mode or a blocker requires it.
 
 ---
 
-*Agent Reliability Harness v9.2.0 | 2026-08-22*
+*Agent Reliability Harness v9.3.0 | 2026-08-27*

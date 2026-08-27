@@ -647,7 +647,7 @@ Prompt: "对刚 init_run 的 acceptance_registry / run_state 跑 validate_report
 
 Expected:
 - Validator accepts the schema version exported by `scripts/harness_schema.py`, the explicit
-  `typed-v1` evidence policy, and current `progress-bounded-v2` routing policy.
+  `typed-v1` evidence policy, and current `progress-bounded-v3` routing policy.
 - Legacy `cost-aware-v1` Full records remain valid against their sealed v1 model profiles.
 - Empty/weak pass_algorithm may still fail content rules until filled — manager must fill before PASS.
 
@@ -731,25 +731,42 @@ Expected:
 Failure:
 - Heading echoes or generic Done/PASS words satisfy the filled-spec gate.
 
-## Case 50: Mechanical Work Uses Luna Max Without Dispatch Theater
+## Case 50: Mechanical Work Uses One Bounded Luna Max Worker
 
 Prompt: "改一个明确字段，有现成测试；为了省钱请合理选择 GPT-5.6。"
 
 Expected:
-- Route profile is `fast` / Luna `max` when a new model selection is needed.
-- If the active main thread can finish immediately, it stays Direct instead of spawning a worker.
+- Route the implementation to one `fast` / Luna `max` worker when model selection is needed.
+- Keep the simple task bounded: no fan-out, and the parent retains integration and acceptance.
 
 Failure:
-- Spawns a cheap worker whose coordination costs more than the edit, or uses Sol for mechanical work.
+- Fans out or leaves the worker unbounded, or uses Sol for ordinary mechanical execution.
 
-## Case 51: Bounded Sol Synthesis Returns To Luna Max
+## Case 50A: Qualifying Micro Implementation May Stay Parent-Direct
+
+Prompt: "在当前模块修一个局部、低风险、上下文完整的小实现，一个短测试就能证明，而且委派成本更高。"
+
+Expected:
+- Select the parent/main `Sol high` direct lane; do not create a worker solely because the task is
+  an implementation.
+- Require the short verification cycle and keep the Native/Portable/Audited mode decision
+  independent from this execution-shape choice.
+- If the user explicitly requests delegation, override this direct lane and dispatch one bounded
+  `fast` / Luna `max` worker instead.
+
+Failure:
+- Treats every implementation as a worker, or treats `--simple --mechanically-verifiable` as an
+  alias for micro implementation.
+
+## Case 51: Bounded Sol Synthesis Returns To A Luna Max Worker
 
 Prompt: "需求还很模糊，先规划验收和 Harness，然后完成实现。"
 
 Expected:
-- Fuzzy planning and harness synthesis route to `planner` / Sol `max` for one output
+- Fuzzy planning and harness synthesis route to `planner` / Sol `high` for one output
   contract and one stop condition.
-- Once the contract is frozen, long implementation/integration routes to `main` / Luna `max`.
+- Once the contract is frozen, implementation routes to `fast` / Luna `max`; the parent keeps
+  integration and acceptance.
 
 Failure:
 - Gives Sol an open-ended implementation loop, or keeps Sol for mechanical execution.
@@ -762,8 +779,8 @@ Expected:
 - `model_router.py --no-progress-cycles 2` rejects routing without `--new-diagnosis`.
 - The manager records facts, assumptions, the invalidated hypothesis, and one falsifying
   experiment before rerouting.
-- With `--new-diagnosis`, route exactly one `planner` / Sol `max` diagnosis, then return
-  execution to Luna `max`.
+- With `--new-diagnosis`, route exactly one `planner` / Sol `high` diagnosis, then return
+  implementation execution to a bounded `fast` / Luna `max` worker.
 
 Failure:
 - Repeats the route, increases effort, passes the full transcript, or starts multiple reviewers.

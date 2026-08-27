@@ -181,6 +181,27 @@ def test_audited_lifecycle_reaches_high_confidence() -> None:
         assert "Acceptance: 1 pass, 0 pending, 0 fail, 0 blocked, 0 scoped_out" in result.stdout
         assert "Completion confidence: high" in result.stdout
         assert "Integrity errors: none" in result.stdout
+        strict = run(
+            [
+                "python3",
+                "scripts/status.py",
+                str(artifact / "run_state.json"),
+                "--require-high-confidence",
+            ]
+        )
+        assert "Status gate:" not in strict.stdout
+        strict_json = run(
+            [
+                "python3",
+                "scripts/status.py",
+                str(artifact / "run_state.json"),
+                "--json",
+                "--require-high-confidence",
+            ]
+        )
+        strict_payload = json.loads(strict_json.stdout)
+        assert isinstance(strict_payload, dict)
+        assert strict_payload["completion_confidence"] == "high"
     finally:
         shutil.rmtree(temp)
 
@@ -286,26 +307,57 @@ def test_trigger_shortcuts_run_the_mode_gate_without_forcing_work() -> None:
     for mode in ("native", "portable", "audited"):
         assert mode in default_prompt
     assert "mode gate" in normalized_skill
-    assert "does not authorize delegation" in normalized_skill
+    assert "delegation is independent of mode" in normalized_skill
     assert "ordinary implementation, planning, and testing" in normalized_skill
-    assert "do not load references, route models, create harness files, or dispatch" in normalized_skill
+    assert "do not load references" in normalized_skill
+    assert "create harness files" in normalized_skill
+    assert "v3 micro work may stay on the parent/main" in normalized_skill
+    assert "ordinary or execution-heavy work uses one bounded" in normalized_skill
+    assert "explicit user delegation overrides the micro direct route" in normalized_skill
+    assert "try another verifiable bounded worker first" in normalized_skill
+    assert "if none exists or resolution fails, block" in normalized_skill
+    assert "explicit user authorization" in normalized_skill
     assert "$agent-reliability-harness" in default_prompt
 
 
 def test_optional_model_routing_policy_is_present() -> None:
     routing = (ROOT / "references" / "model-routing.md").read_text(encoding="utf-8")
     adapter = (ROOT / "adapters" / "codex.md").read_text(encoding="utf-8")
+    normalized_adapter = " ".join(adapter.split())
     metadata = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
-    for term in ("gpt-5.6-luna", "gpt-5.6-sol", "Luna `max`", "bounded Sol"):
+    for term in (
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "Luna `max`",
+        "Sol `high`",
+        "bounded Sol",
+        "progress-bounded-v3",
+        "progress-bounded-v2",
+        "--routing-policy progress-bounded-v2",
+        "block implementation",
+        "explicit user authorization",
+    ):
         assert term in routing
     assert "gpt-5.6-luna" in adapter
     assert "progress circuit breaker" in adapter.casefold()
     assert "Model routing does not authorize delegation" in routing
-    assert "A Native one-line edit stays in the current thread" in routing
+    assert "Delegation is independent of mode" in routing
+    assert "implementation work" in routing.casefold()
+    assert "--micro-implementation" in routing
+    assert "no-protected-boundary" in routing
+    assert "auditable routing assertions" in routing
+    assert "cost-aware-v1" in routing
+    assert "bounded mechanical route" in routing.casefold()
+    assert "serial" in routing.casefold()
+    assert "recursive" in routing.casefold()
     for text in (routing, adapter, metadata):
         assert "luna_worker" in text
     assert "fork_turns=none" in adapter
     assert "self-contained" in adapter
+    assert "another verifiable bounded worker" in normalized_adapter
+    assert "Parent direct execution requires explicit user authorization" in normalized_adapter
+    assert "micro implementation" in normalized_adapter.casefold()
+    assert "active Native thread" not in adapter
     assert "when configured" in metadata.casefold()
 
 
@@ -341,6 +393,7 @@ def test_runtime_model_maps_are_outside_core_schema() -> None:
         assert provider_slug not in schema
         assert provider_slug in profiles
     assert "from runtime_profiles import" in router
+    assert "--implementation" in router
 
 
 def test_runtime_package_contains_runtime_and_excludes_development_assets() -> None:

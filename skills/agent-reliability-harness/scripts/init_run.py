@@ -18,6 +18,7 @@ from harness_schema import (
     SCHEMA_VERSION,
     VERIFICATION_TIERS,
 )
+from runtime_state import atomic_write_bytes, serialized_json
 
 
 TEMPLATE_MAP = {
@@ -62,7 +63,7 @@ def write_json(path: Path, data: object, force: bool) -> bool:
     if path.exists() and not force:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_bytes(path, serialized_json(data))
     return True
 
 
@@ -588,7 +589,7 @@ def main() -> int:
         trace_event = json.loads(str(protocol_files["trace.jsonl"]))
         trace_event["state_digests"] = {
             filename: hashlib.sha256(
-                (json.dumps(protocol_files[filename], ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+                serialized_json(protocol_files[filename])
             ).hexdigest()
             for filename in ("run_state.json", "acceptance_registry.json")
         }

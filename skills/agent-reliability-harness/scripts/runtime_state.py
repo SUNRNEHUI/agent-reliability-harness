@@ -45,18 +45,29 @@ def _require_scope(writer_role: str | None, scope: str | None) -> None:
         raise PermissionError("invalid task-local writer")
 
 
-def _write_locked(path: Path, value: dict[str, Any]) -> None:
+def serialized_json(value: Any) -> bytes:
+    """Serialize protocol JSON as deterministic UTF-8 bytes with an LF terminator."""
+    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Atomically replace a file without platform-specific newline translation."""
+    path = path.expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
+
+
+def _write_locked(path: Path, value: dict[str, Any]) -> None:
+    atomic_write_bytes(path, serialized_json(value))
 
 
 def atomic_write_json(path: Path, value: dict[str, Any], *, writer_role: str | None, scope: str | None) -> None:

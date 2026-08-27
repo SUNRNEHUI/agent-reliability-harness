@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -245,6 +246,90 @@ class SchemaContractTests(unittest.TestCase):
             )
             self.assertTrue(
                 set(load_object(SCHEMA_ROOT / "acceptance-registry-v1.schema.json")["required"]).issubset(acceptance)
+            )
+
+    def test_generated_canonical_bytes_match_digest_anchors_without_crlf(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="arh-canonical-bytes-contract-") as temp_name:
+            temp = Path(temp_name)
+            audited = run(
+                sys.executable,
+                "scripts/init_run.py",
+                "--mode",
+                "audited",
+                "--project-root",
+                str(temp),
+                "--title",
+                "canonical bytes",
+                "--agents",
+                "docs",
+                "--force",
+            )
+            self.assertEqual(audited.returncode, 0, audited.stdout + audited.stderr)
+            audited_root = temp / "workspace" / "canonical-bytes"
+            trace_path = audited_root / "trace.jsonl"
+            initialized = json.loads(trace_path.read_text(encoding="utf-8").splitlines()[0])
+            for filename in ("run_state.json", "acceptance_registry.json"):
+                with self.subTest(stage="initial", filename=filename):
+                    raw = (audited_root / filename).read_bytes()
+                    self.assertNotIn(b"\r", raw)
+                    self.assertEqual(
+                        initialized["state_digests"][filename],
+                        hashlib.sha256(raw).hexdigest(),
+                    )
+
+            sealed = run(
+                sys.executable,
+                "scripts/harnessctl.py",
+                "seal",
+                str(audited_root),
+                "--reason",
+                "canonical bytes contract",
+            )
+            self.assertEqual(sealed.returncode, 0, sealed.stdout + sealed.stderr)
+            transitioned = run(
+                sys.executable,
+                "scripts/harnessctl.py",
+                "run-set",
+                str(audited_root),
+                "--status",
+                "gated",
+            )
+            self.assertEqual(transitioned.returncode, 0, transitioned.stdout + transitioned.stderr)
+            events = [
+                json.loads(line)
+                for line in trace_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            transition = next(event for event in reversed(events) if event.get("event") == "run_transition")
+            state_raw = (audited_root / "run_state.json").read_bytes()
+            self.assertNotIn(b"\r", state_raw)
+            self.assertEqual(transition["after_sha256"], hashlib.sha256(state_raw).hexdigest())
+
+            portable = run(
+                sys.executable,
+                "scripts/harnessctl.py",
+                "materialize",
+                str(temp),
+                "--title",
+                "canonical portable",
+                "--goal",
+                "Preserve canonical bytes",
+                "--done-when",
+                "Digest anchor matches",
+                "--next-action",
+                "Inspect canonical bytes",
+            )
+            self.assertEqual(portable.returncode, 0, portable.stdout + portable.stderr)
+            portable_payload = json.loads(portable.stdout)
+            contract_path = Path(portable_payload["contract_path"])
+            contract_raw = contract_path.read_bytes()
+            self.assertNotIn(b"\r", contract_raw)
+            portable_event = json.loads(
+                (contract_path.parent / "events.jsonl").read_text(encoding="utf-8").splitlines()[0]
+            )
+            self.assertEqual(
+                portable_event["contract_sha256"],
+                hashlib.sha256(contract_raw).hexdigest(),
             )
 
     def test_worker_result_template_contains_the_frozen_envelope(self) -> None:

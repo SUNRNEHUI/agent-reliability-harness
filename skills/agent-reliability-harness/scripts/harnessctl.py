@@ -35,7 +35,7 @@ from harness_schema import (
     is_audited_mode,
 )
 from runtime_profiles import model_profiles_for
-from runtime_state import append_jsonl, locked, mutate_json
+from runtime_state import atomic_write_bytes, append_jsonl, locked, mutate_json, serialized_json
 from state_witness_check import validate as validate_state_witness
 from validate_report import validate_acceptance_registry, validate_run_state
 from tdd_gate_check import gate_mode_of, latest_gate_decision, load_events, validate_trace as validate_tdd_trace
@@ -50,10 +50,6 @@ DEFAULT_CAPSULE_MAX_CHARS = 6000
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def serialized_json(value: dict[str, object]) -> bytes:
-    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
 def sha256(value: bytes) -> str:
@@ -332,9 +328,8 @@ def validate_candidate(
     fd, name = tempfile.mkstemp(prefix=f".{filename}.", suffix=".json", dir=str(artifact_dir))
     path = Path(name)
     try:
-        with open(fd, "w", encoding="utf-8", closefd=True) as handle:
-            json.dump(value, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
+        with open(fd, "wb", closefd=True) as handle:
+            handle.write(serialized_json(value))
         errors = validator(path)
     finally:
         path.unlink(missing_ok=True)
@@ -1119,10 +1114,7 @@ def materialize_portable(args: argparse.Namespace) -> int:
     if errors:
         shutil.rmtree(artifact_dir)
         raise ValueError("invalid Portable Contract: " + "; ".join(errors))
-    (artifact_dir / "contract.json").write_text(
-        json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_bytes(artifact_dir / "contract.json", serialized_json(contract))
     append_jsonl(
         artifact_dir / "events.jsonl",
         {

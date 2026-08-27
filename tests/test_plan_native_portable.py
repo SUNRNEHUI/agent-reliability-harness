@@ -11,6 +11,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+try:
+    from .test_handoff_resume import remove_readonly
+except ImportError:  # unittest discover -s tests imports modules without a package
+    from test_handoff_resume import remove_readonly
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROOT = REPOSITORY_ROOT / "skills" / "agent-reliability-harness"
@@ -106,7 +111,7 @@ class PlanNativePortableTests(unittest.TestCase):
         require_success(run("git", "commit", "-qm", "initial", cwd=self.project))
 
     def tearDown(self) -> None:
-        shutil.rmtree(self.project)
+        shutil.rmtree(self.project, onerror=remove_readonly)
 
     def harness(self, command: str, *args: str) -> subprocess.CompletedProcess[str]:
         return run("python3", "scripts/harnessctl.py", command, *args)

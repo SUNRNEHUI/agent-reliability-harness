@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -24,6 +26,15 @@ def run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
 def require_success(result: subprocess.CompletedProcess[str]) -> None:
     if result.returncode != 0:
         raise AssertionError(result.stdout + result.stderr)
+
+
+def remove_readonly(func, path, exc_info) -> None:
+    """Retry rmtree operations after clearing a Windows read-only attribute."""
+    error = exc_info[1]
+    if not isinstance(error, PermissionError):
+        raise error
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -51,7 +62,7 @@ class HandoffResumeTests(unittest.TestCase):
         require_success(run("git", "commit", "-qm", "initial", cwd=self.project))
 
     def tearDown(self) -> None:
-        shutil.rmtree(self.project)
+        shutil.rmtree(self.project, onerror=remove_readonly)
 
     def init_artifact(self, title: str, *, witness: bool = False) -> Path:
         command = [

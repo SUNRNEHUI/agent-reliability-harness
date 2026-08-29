@@ -33,6 +33,29 @@ npx skills add https://github.com/SUNRNEHUI/agent-harness --skill "agent-harness
 
 [Overview](#overview) · [Execution modes](#execution-modes) · [Download](#download) · [Installation](#installation) · [Release history](#release-history) · [Documentation map](#runtime-adapters)
 
+## Start With Alignment
+
+The high-leverage part of Agent Harness happens before any worker starts. It acts as a
+translator between a rough intent and an executable task: it makes hidden assumptions visible,
+then turns the request into a short, reviewable alignment packet.
+
+Before implementation, the manager clarifies the user-facing outcome and system `done_when`,
+scope and ownership, constraints and non-goals, relevant edge cases and approval boundaries, and
+the evidence and pass rule for each acceptance criterion. Low-risk gaps can receive a stated
+recommended default; a material choice stays an explicit decision instead of becoming a silent
+assumption.
+
+You do not need to arrive with a complete task breakdown. Describe the rough goal, then say:
+
+```text
+I want to [rough goal]. Write a harness first so we can align the work before implementation.
+```
+
+The agent first returns the alignment packet for review. It starts work only after the outcome,
+boundaries, and acceptance evidence are clear enough to execute honestly. “Write a harness” is
+an alignment request, not an automatic instruction to create durable files, select a heavyweight
+mode, or dispatch sub-agents.
+
 ## Download
 
 Use the [GitHub Releases](https://github.com/SUNRNEHUI/agent-harness/releases) page as the
